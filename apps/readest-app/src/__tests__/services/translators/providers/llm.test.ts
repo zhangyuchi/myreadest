@@ -40,7 +40,7 @@ vi.mock('@/utils/supabase', () => ({
 import { generateText } from 'ai';
 import { llmProvider } from '@/services/translators/providers/llm';
 
-const mockGenerateText = vi.mocked(generateText);
+const mockGenerateText = vi.mocked(generateText) as unknown as ReturnType<typeof vi.fn>;
 
 const DEFAULT_AI_SETTINGS = {
   enabled: true,
