@@ -250,7 +250,7 @@ export const DEFAULT_READSETTINGS: ReadSettings = {
   isNotebookPinned: false,
   notebookActiveTab: 'notes',
   autohideCursor: true,
-  translationProvider: 'deepl',
+  translationProvider: 'google',
   translateTargetLang: 'EN',
   wordLensAutoDownload: true,
 
@@ -429,7 +429,7 @@ export const DEFAULT_TTS_CONFIG: TTSConfig = {
 
 export const DEFAULT_TRANSLATOR_CONFIG: TranslatorConfig = {
   translationEnabled: false,
-  translationProvider: 'deepl',
+  translationProvider: 'google',
   translateTargetLang: '',
   showTranslateSource: true,
   ttsReadAloudText: 'both',

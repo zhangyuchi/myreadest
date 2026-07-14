@@ -20,7 +20,7 @@ export const MODEL_PRICING: Record<string, { input: string; output: string }> = 
 };
 
 export const DEFAULT_AI_SETTINGS: AISettings = {
-  enabled: false,
+  enabled: true,
   provider: 'ollama',
 
   ollamaBaseUrl: 'http://127.0.0.1:11434',

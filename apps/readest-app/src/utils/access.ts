@@ -3,7 +3,6 @@ import { supabase } from '@/utils/supabase';
 import { UserPlan } from '@/types/quota';
 import { DEFAULT_DAILY_TRANSLATION_QUOTA, DEFAULT_STORAGE_QUOTA } from '@/services/constants';
 import { isWebAppPlatform } from '@/services/environment';
-import { getDailyUsage } from '@/services/translators/utils';
 import { getRuntimeConfig } from '@/services/runtimeConfig';
 
 interface Token {
@@ -107,7 +106,7 @@ export const getTranslationQuota = (plan: UserPlan): number => {
 export const getTranslationPlanData = (token: string) => {
   const data = jwtDecode<Token>(token) || {};
   const plan: UserPlan = data['plan'] || 'free';
-  const usage = getDailyUsage() || 0;
+  const usage = 0;
   const quota = getTranslationQuota(plan);
 
   return {
