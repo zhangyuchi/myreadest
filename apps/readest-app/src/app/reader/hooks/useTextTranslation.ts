@@ -119,12 +119,18 @@ export function useTextTranslation(
     const observer = createTranslationObserver();
     observerRef.current = observer;
     const nodes = walkTextNodes(view, ['pre', 'code', 'math']);
-    console.log(
-      'Observing text nodes for translation:',
-      nodes.length,
-      // nodes.map((n) => n.textContent),
-    );
     allTextNodes.current = nodes;
+    if (nodes.length === 0) {
+      eventDispatcher.dispatch('toast', {
+        timeout: 5000,
+        message: _(
+          'No selectable text found for translation. This may be an image-based PDF or a scanned document.',
+        ),
+        type: 'info',
+      });
+      setIsLoading(bookKey, false);
+      return;
+    }
     nodes.forEach((el) => observer.observe(el));
   };
 

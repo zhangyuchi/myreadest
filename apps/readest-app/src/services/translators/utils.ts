@@ -8,15 +8,13 @@ export const isTranslationAvailable = (book?: Book | null, targetLanguage?: stri
   }
 
   const primaryLanguage = book.primaryLanguage || '';
-  if (!primaryLanguage || primaryLanguage.toLowerCase() === 'und') {
+  const langKnown = !!primaryLanguage && primaryLanguage.toLowerCase() !== 'und';
+
+  if (langKnown && targetLanguage && isSameLang(primaryLanguage, targetLanguage)) {
     return false;
   }
 
-  if (targetLanguage && isSameLang(primaryLanguage, targetLanguage)) {
-    return false;
-  }
-
-  if (!targetLanguage && isSameLang(primaryLanguage, getLocale())) {
+  if (langKnown && !targetLanguage && isSameLang(primaryLanguage, getLocale())) {
     return false;
   }
 
