@@ -112,6 +112,12 @@ describe('llmProvider', () => {
     expect(callArg.prompt).not.toContain('@@@DELIM@@@');
   });
 
+  it('propagates a single-text model failure', async () => {
+    mockGenerateText.mockRejectedValue(new Error('API error'));
+
+    await expect(llmProvider.translate(['Hello'], 'en', 'fr')).rejects.toThrow('API error');
+  });
+
   // --- Batch translation ---
 
   it('translates multiple texts using delimiter batching', async () => {
@@ -146,17 +152,15 @@ describe('llmProvider', () => {
     expect(mockGenerateText).toHaveBeenCalledTimes(3);
   });
 
-  // --- Fallback: per-text also fails ---
-
-  it('returns original text when per-text fallback also fails', async () => {
+  it('propagates a failed per-text fallback', async () => {
     mockGenerateText
-      .mockResolvedValueOnce({ text: 'garbage' }) // batch: wrong count
-      .mockRejectedValueOnce(new Error('API error')) // per-text 1 fails
-      .mockRejectedValueOnce(new Error('API error')); // per-text 2 fails
+      .mockResolvedValueOnce({ text: 'garbage' })
+      .mockRejectedValueOnce(new Error('API error'))
+      .mockResolvedValueOnce({ text: 'Monde' });
 
-    const result = await llmProvider.translate(['Hello', 'World'], 'en', 'fr');
-
-    expect(result).toEqual(['Hello', 'World']);
+    await expect(llmProvider.translate(['Hello', 'World'], 'en', 'fr')).rejects.toThrow(
+      'API error',
+    );
   });
 
   // --- Not configured ---
@@ -208,11 +212,12 @@ describe('llmProvider', () => {
 
   // --- Empty LLM response ---
 
-  it('returns original text when LLM returns empty response', async () => {
+  it('rejects an empty model response', async () => {
     mockGenerateText.mockResolvedValue({ text: '' });
 
-    const result = await llmProvider.translate(['Hello'], 'en', 'fr');
-    expect(result).toEqual(['Hello']);
+    await expect(llmProvider.translate(['Hello'], 'en', 'fr')).rejects.toThrow(
+      'Translation returned an empty response',
+    );
   });
 
   // --- Language name mapping ---

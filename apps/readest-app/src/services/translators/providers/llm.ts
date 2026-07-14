@@ -17,6 +17,14 @@ function getLangName(langCode: string): string {
   return TRANSLATOR_LANGS[shortCode] || langCode;
 }
 
+function requireTranslationText(text: string | undefined): string {
+  const translated = text?.trim();
+  if (!translated) {
+    throw new Error('Translation returned an empty response.');
+  }
+  return translated;
+}
+
 function isAIConfigured(aiSettings: typeof DEFAULT_AI_SETTINGS): boolean {
   if (!aiSettings.enabled) return false;
   if (aiSettings.provider === 'ollama') return true;
@@ -86,53 +94,42 @@ export const llmProvider: TranslationProvider = {
     // Single text: skip delimiter logic
     if (nonEmptyTexts.length === 1) {
       const system = `You are a professional translator. Translate the following text from ${sourceLangName} to ${targetLangName}. Output ONLY the translation — no explanations, no extra text.`;
-      try {
-        const result = await generateText({ model, system, prompt: nonEmptyTexts[0]! });
-        const translated = result.text?.trim() || nonEmptyTexts[0]!;
-        const results = [...texts];
-        results[indices[0]!] = translated;
-        return results;
-      } catch {
-        return [...texts];
-      }
+      const result = await generateText({ model, system, prompt: nonEmptyTexts[0]! });
+      const results = [...texts];
+      results[indices[0]!] = requireTranslationText(result.text);
+      return results;
     }
 
     // Batch: join with delimiter
     const system = `You are a professional translator. Translate the following text segments from ${sourceLangName} to ${targetLangName}. The segments are separated by a special delimiter line: ${DELIMITER}. Translate each segment and separate the translations with the same delimiter. Output ONLY the translations with delimiters — no explanations, no numbering, no extra text.`;
     const batchedInput = nonEmptyTexts.join(BATCH_DELIMITER);
 
-    try {
-      const result = await generateText({ model, system, prompt: batchedInput });
-      const translatedSegments = result.text.split(DELIMITER).map((s) => s.trim());
+    const result = await generateText({ model, system, prompt: batchedInput });
+    const translatedSegments = result.text.split(DELIMITER).map((segment) => segment.trim());
 
-      if (translatedSegments.length === nonEmptyTexts.length) {
-        const results = [...texts];
-        indices.forEach((originalIndex, i) => {
-          results[originalIndex] = translatedSegments[i] || nonEmptyTexts[i]!;
-        });
-        return results;
-      }
-
-      // Fallback: per-text translation
-      const perTextResults = await Promise.all(
-        nonEmptyTexts.map(async (text) => {
-          try {
-            const singleSystem = `You are a professional translator. Translate the following text from ${sourceLangName} to ${targetLangName}. Output ONLY the translation — no explanations, no extra text.`;
-            const r = await generateText({ model, system: singleSystem, prompt: text });
-            return r.text?.trim() || text;
-          } catch {
-            return text;
-          }
-        }),
-      );
-
+    if (
+      translatedSegments.length === nonEmptyTexts.length &&
+      translatedSegments.every((segment) => segment.length > 0)
+    ) {
       const results = [...texts];
-      indices.forEach((originalIndex, i) => {
-        results[originalIndex] = perTextResults[i]!;
+      indices.forEach((originalIndex, index) => {
+        results[originalIndex] = translatedSegments[index]!;
       });
       return results;
-    } catch {
-      return [...texts];
     }
+
+    const perTextResults = await Promise.all(
+      nonEmptyTexts.map(async (text) => {
+        const singleSystem = `You are a professional translator. Translate the following text from ${sourceLangName} to ${targetLangName}. Output ONLY the translation — no explanations, no extra text.`;
+        const singleResult = await generateText({ model, system: singleSystem, prompt: text });
+        return requireTranslationText(singleResult.text);
+      }),
+    );
+
+    const results = [...texts];
+    indices.forEach((originalIndex, index) => {
+      results[originalIndex] = perTextResults[index]!;
+    });
+    return results;
   },
 };
