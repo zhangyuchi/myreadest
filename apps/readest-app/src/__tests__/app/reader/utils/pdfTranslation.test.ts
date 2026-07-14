@@ -2,23 +2,30 @@ import { describe, expect, it, vi } from 'vitest';
 import { getVisiblePDFPageSources } from '@/app/reader/utils/pdfTranslation';
 import type { FoliateView } from '@/types/view';
 
-const rect = (top: number, bottom: number): DOMRect =>
+const rect = (top: number, bottom: number, left = 0, right = 600): DOMRect =>
   ({
     top,
     bottom,
-    left: 0,
-    right: 600,
-    width: 600,
+    left,
+    right,
+    width: right - left,
     height: bottom - top,
     x: 0,
     y: top,
     toJSON: vi.fn(),
   }) as DOMRect;
 
-const makePage = (index: number, text: string, top: number, bottom: number) => {
+const makePage = (
+  index: number,
+  text: string,
+  top: number,
+  bottom: number,
+  left = 0,
+  right = 600,
+) => {
   const iframe = document.createElement('iframe');
   document.body.appendChild(iframe);
-  iframe.getBoundingClientRect = () => rect(top, bottom);
+  iframe.getBoundingClientRect = () => rect(top, bottom, left, right);
   const doc = iframe.contentDocument!;
   doc.body.innerHTML = `<div class="textLayer"><span>${text}</span></div>`;
   return { doc, index };
@@ -32,6 +39,7 @@ describe('getVisiblePDFPageSources', () => {
       makePage(2, 'Second page', 0, 400),
       makePage(3, 'Third page', 400, 800),
       makePage(4, 'Offscreen page', 900, 1300),
+      makePage(5, 'Horizontally offscreen page', 0, 800, 700, 1300),
     ];
     const view = {
       renderer: Object.assign(renderer, { getContents: () => contents }),
