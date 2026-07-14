@@ -5,8 +5,14 @@ vi.mock('ai', () => ({
   generateText: vi.fn(),
 }));
 
+// Mock variables must be hoisted alongside vi.mock factories — otherwise
+// the factories run before the consts are initialized (vi.mock is hoisted).
+const { mockGetState, mockGetAIProvider } = vi.hoisted(() => ({
+  mockGetState: vi.fn(),
+  mockGetAIProvider: vi.fn(),
+}));
+
 // Mock settings store so we can control aiSettings per test.
-const mockGetState = vi.fn();
 vi.mock('@/store/settingsStore', () => ({
   useSettingsStore: {
     getState: mockGetState,
@@ -14,7 +20,6 @@ vi.mock('@/store/settingsStore', () => ({
 }));
 
 // Mock AI provider factory — we only need getModel() to return a sentinel.
-const mockGetAIProvider = vi.fn();
 vi.mock('@/services/ai/providers', () => ({
   getAIProvider: mockGetAIProvider,
 }));
