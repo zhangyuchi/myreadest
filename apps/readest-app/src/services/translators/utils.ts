@@ -3,7 +3,7 @@ import { isSameLang } from '@/utils/lang';
 import { getLocale } from '@/utils/misc';
 
 export const isTranslationAvailable = (book?: Book | null, targetLanguage?: string | null) => {
-  if (!book || book.format === 'PDF') {
+  if (!book) {
     return false;
   }
 
