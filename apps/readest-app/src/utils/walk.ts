@@ -24,6 +24,10 @@ export const walkTextNodes = (root: HTMLElement, rejectTags: string[] = []): HTM
           walk(iframeDoc.body, depth + 1);
         }
       }
+      if (child.classList.contains('textLayer') && child.textContent?.trim()) {
+        elements.push(child);
+        continue;
+      }
       const hasDirectText =
         child.childNodes &&
         Array.from(child.childNodes).some((node) => {

@@ -295,6 +295,42 @@ export function useTextTranslation(
       return;
     }
 
+    if (el.classList.contains('textLayer')) {
+      const parent = el.parentElement;
+      if (!parent || parent.querySelector('.translation-target')) return;
+
+      try {
+        const translated = await translateRef.current([text]);
+        const translatedText = translated[0];
+        if (!translatedText || text === translatedText) return;
+
+        const wrapper = createTranslationTargetNode({
+          translatedText,
+          lang: targetLang || getLocale(),
+          targetBlockClassName,
+          hidden: !enabled.current,
+          widthLineBreak: true,
+        });
+        wrapper.style.position = 'relative';
+        wrapper.style.fontSize = '16px';
+        wrapper.style.lineHeight = '1.6';
+        wrapper.style.color = 'inherit';
+        wrapper.style.padding = '8px';
+        wrapper.style.marginTop = '4px';
+        wrapper.style.width = '100%';
+        wrapper.style.boxSizing = 'border-box';
+
+        batchDOMUpdate(() => {
+          if (!enabled.current || parent.querySelector('.translation-target')) return;
+          parent.appendChild(wrapper);
+          translatedElements.current.push(parent);
+        });
+      } catch (err) {
+        console.warn('PDF text layer translation failed:', err);
+      }
+      return;
+    }
+
     const updateSourceNodes = (element: HTMLElement) => {
       const hasDirectText = Array.from(element.childNodes).some(
         (node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim() !== '',

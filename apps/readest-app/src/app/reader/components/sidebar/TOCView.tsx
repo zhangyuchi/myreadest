@@ -5,6 +5,7 @@ import 'overlayscrollbars/overlayscrollbars.css';
 
 import { TOCItem } from '@/libs/document';
 import { useReaderStore } from '@/store/readerStore';
+import { useBookDataStore } from '@/store/bookDataStore';
 import { useSidebarStore } from '@/store/sidebarStore';
 import { eventDispatcher } from '@/utils/event';
 import { useTextTranslation } from '../../hooks/useTextTranslation';
@@ -51,9 +52,11 @@ const TOCView: React.FC<{
   toc: TOCItem[];
 }> = ({ bookKey, toc }) => {
   const { getView, getViewSettings, getProgress } = useReaderStore();
+  const { getBookData } = useBookDataStore();
   const { sideBarBookKey, isSideBarVisible } = useSidebarStore();
   const progress = getProgress(bookKey);
   const isEink = !!getViewSettings(bookKey)?.isEink;
+  const isPdf = getBookData(bookKey)?.book?.format === 'PDF';
 
   const [initialScrollTarget] = useState(() => getInitialScrollTarget(toc, progress?.sectionHref));
   const [expandedItems, setExpandedItems] = useState<Set<string>>(initialScrollTarget.expanded);
@@ -151,7 +154,7 @@ const TOCView: React.FC<{
     setScroller(el instanceof HTMLElement ? el : null);
   }, []);
 
-  useTextTranslation(bookKey, containerRef.current, false, 'translation-target-toc');
+  useTextTranslation(bookKey, isPdf ? null : containerRef.current, false, 'translation-target-toc');
 
   useEffect(() => {
     const updateHeight = () => {
