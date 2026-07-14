@@ -25,6 +25,30 @@ function isAIConfigured(aiSettings: typeof DEFAULT_AI_SETTINGS): boolean {
   return false;
 }
 
+export async function detectLanguage(text: string): Promise<string> {
+  const { settings } = useSettingsStore.getState();
+  const aiSettings = settings?.aiSettings ?? DEFAULT_AI_SETTINGS;
+
+  if (!isAIConfigured(aiSettings)) {
+    return 'und';
+  }
+
+  const aiProvider = getAIProvider(aiSettings);
+  const model = aiProvider.getModel();
+
+  const system =
+    'Identify the language of the following text. Respond with ONLY the ISO 639-1 two-letter language code (e.g., "en" for English, "zh" for Chinese, "fr" for French, "ja" for Japanese, "ko" for Korean). If you cannot determine the language, respond with "und".';
+
+  try {
+    const result = await generateText({ model, system, prompt: text });
+    const code = result.text?.trim().toLowerCase() || 'und';
+    if (code === 'und' || code.length < 2) return 'und';
+    return code.split('-')[0]!;
+  } catch {
+    return 'und';
+  }
+}
+
 export const llmProvider: TranslationProvider = {
   name: 'llm',
   label: _('LLM'),

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { FoliateView } from '@/types/view';
 import { UseTranslatorOptions } from '@/services/translators';
 import { useReaderStore } from '@/store/readerStore';
+import { useBookDataStore } from '@/store/bookDataStore';
 import { useBookProgress } from '@/store/readerProgressStore';
 import { useTranslator } from '@/hooks/useTranslator';
 import { useTranslation } from '@/hooks/useTranslation';
@@ -10,6 +11,8 @@ import { walkTextNodes } from '@/utils/walk';
 import { debounce } from '@/utils/debounce';
 import { getLocale } from '@/utils/misc';
 import { getDirFromLanguage } from '@/utils/rtl';
+import { isSameLang } from '@/utils/lang';
+import { detectLanguage } from '@/services/translators/providers/llm';
 
 export const createTranslationTargetNode = ({
   translatedText,
@@ -57,6 +60,7 @@ export function useTextTranslation(
   const _ = useTranslation();
   const getViewSettings = useReaderStore((s) => s.getViewSettings);
   const setIsLoading = useReaderStore((s) => s.setIsLoading);
+  const { getBookData } = useBookDataStore();
   const viewSettings = getViewSettings(bookKey);
   // Reactive: triggers translate-in-range on every page turn so the
   // visible viewport's translations refresh. Reads from
@@ -113,7 +117,7 @@ export function useTextTranslation(
     }, 2000);
   };
 
-  const observeTextNodes = () => {
+  const observeTextNodes = async () => {
     if (!view || !enabled.current) return;
 
     const observer = createTranslationObserver();
@@ -131,6 +135,45 @@ export function useTextTranslation(
       setIsLoading(bookKey, false);
       return;
     }
+
+    const bookData = getBookData(bookKey);
+    const primaryLang = bookData?.book?.primaryLanguage || '';
+    const langKnown = !!primaryLang && primaryLang.toLowerCase() !== 'und';
+    const effectiveTargetLang = targetLang || getLocale();
+
+    if (!langKnown) {
+      const sample = nodes
+        .slice(0, 5)
+        .map((n) => n.textContent?.trim())
+        .filter(Boolean)
+        .join('\n')
+        .slice(0, 500);
+
+      if (sample) {
+        setIsLoading(bookKey, true);
+        const detected = await detectLanguage(sample);
+        setIsLoading(bookKey, false);
+
+        if (detected === 'und') {
+          eventDispatcher.dispatch('toast', {
+            timeout: 5000,
+            message: _('Unable to detect the document language. Translation is not available.'),
+            type: 'info',
+          });
+          return;
+        }
+
+        if (isSameLang(detected, effectiveTargetLang)) {
+          eventDispatcher.dispatch('toast', {
+            timeout: 5000,
+            message: _('The document is already in the target language. No translation needed.'),
+            type: 'info',
+          });
+          return;
+        }
+      }
+    }
+
     nodes.forEach((el) => observer.observe(el));
   };
 
