@@ -38,6 +38,7 @@ const alignedTranslations = (sourceBlocks: PDFSourceBlock[], translated: string[
 
 const escapeProviderMarkdown = (text: string) =>
   text
+    .replace(/\s+/gu, ' ')
     .replace(/&/gu, '&amp;')
     .replace(/</gu, '&lt;')
     .replace(/>/gu, '&gt;')

@@ -217,6 +217,24 @@ describe('usePDFTranslation', () => {
     );
   });
 
+  it('normalizes provider newlines so only the source block creates Markdown structure', async () => {
+    mocks.getSources.mockReturnValue([
+      { index: 0, blocks: [{ kind: 'heading', headingLevel: 1, text: 'Source heading' }] },
+    ]);
+    mocks.resolveLanguage.mockResolvedValue({
+      language: 'en',
+      provenance: 'detected',
+      skipTranslation: false,
+    });
+    mocks.translate.mockResolvedValue(['Title\n====\n\nTranslated body']);
+
+    const view = makeView();
+    const { result } = renderHook(() => usePDFTranslation('book-1', view));
+
+    await waitFor(() => expect(result.current.pages[0]?.status).toBe('translated'));
+    expect(result.current.pages[0]?.translatedMarkdown).toBe('# Title ==== Translated body');
+  });
+
   it('joins mixed adjacent list blocks with one newline', () => {
     expect(
       formatPDFMarkdown(
