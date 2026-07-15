@@ -86,27 +86,42 @@ beforeEach(() => {
 
 describe('usePDFTranslation', () => {
   it('translates with AUTO when detection falls back', async () => {
-    mocks.getSources.mockReturnValue([{ index: 0, text: 'Hello PDF' }]);
+    mocks.getSources.mockReturnValue([
+      { index: 0, paragraphs: ['First body paragraph.', 'Second body paragraph.'] },
+    ]);
     mocks.resolveLanguage.mockResolvedValue({
       language: 'AUTO',
       provenance: 'fallback',
       skipTranslation: false,
     });
-    mocks.translate.mockResolvedValue(['你好 PDF']);
+    mocks.translate.mockResolvedValue(['第一段。', '第二段。']);
 
     const view = makeView();
     const { result } = renderHook(() => usePDFTranslation('book-1', view));
 
-    await waitFor(() => expect(result.current.pages[0]?.status).toBe('translated'));
-    expect(mocks.translate).toHaveBeenCalledWith(['Hello PDF'], {
-      source: 'AUTO',
-      target: 'zh-CN',
-    });
-    expect(result.current.pages[0]?.translatedText).toBe('你好 PDF');
+    await waitFor(() =>
+      expect(result.current.pages[0]).toEqual(
+        expect.objectContaining({
+          status: 'translated',
+          translatedParagraphs: ['第一段。', '第二段。'],
+        }),
+      ),
+    );
+    expect(mocks.translate).toHaveBeenCalledWith(
+      ['First body paragraph.', 'Second body paragraph.'],
+      {
+        source: 'AUTO',
+        target: 'zh-CN',
+      },
+    );
+    expect(result.current.pages[0]?.sourceParagraphs).toEqual([
+      'First body paragraph.',
+      'Second body paragraph.',
+    ]);
   });
 
   it('publishes an error instead of source text when translation rejects', async () => {
-    mocks.getSources.mockReturnValue([{ index: 0, text: 'Hello PDF' }]);
+    mocks.getSources.mockReturnValue([{ index: 0, paragraphs: ['Hello PDF'] }]);
     mocks.resolveLanguage.mockResolvedValue({
       language: 'en',
       provenance: 'detected',
@@ -119,14 +134,37 @@ describe('usePDFTranslation', () => {
 
     await waitFor(() => expect(result.current.pages[0]?.status).toBe('error'));
     expect(result.current.pages[0]?.error).toBe('API offline');
-    expect(result.current.pages[0]?.translatedText).toBeUndefined();
+    expect(result.current.pages[0]?.translatedParagraphs).toBeUndefined();
+  });
+
+  it('publishes an error when translation response does not align with source paragraphs', async () => {
+    mocks.getSources.mockReturnValue([
+      { index: 0, paragraphs: ['First body paragraph.', 'Second body paragraph.'] },
+    ]);
+    mocks.resolveLanguage.mockResolvedValue({
+      language: 'en',
+      provenance: 'detected',
+      skipTranslation: false,
+    });
+    mocks.translate.mockResolvedValue(['only one paragraph']);
+
+    const view = makeView();
+    const { result } = renderHook(() => usePDFTranslation('book-1', view));
+
+    await waitFor(() => expect(result.current.pages[0]?.status).toBe('error'));
+    expect(result.current.pages[0]).toEqual(
+      expect.objectContaining({
+        error: 'Translation did not return one result for each paragraph.',
+      }),
+    );
+    expect(result.current.pages[0]?.translatedParagraphs).toBeUndefined();
   });
 
   it('ignores a late result after the visible page changes', async () => {
     let resolveFirst!: (texts: string[]) => void;
     mocks.getSources
-      .mockReturnValueOnce([{ index: 0, text: 'First page' }])
-      .mockReturnValue([{ index: 1, text: 'Second page' }]);
+      .mockReturnValueOnce([{ index: 0, paragraphs: ['First page'] }])
+      .mockReturnValue([{ index: 1, paragraphs: ['Second page'] }]);
     mocks.resolveLanguage.mockResolvedValue({
       language: 'en',
       provenance: 'detected',
@@ -145,12 +183,12 @@ describe('usePDFTranslation', () => {
     await waitFor(() => expect(result.current.pages[0]?.index).toBe(1));
     await act(async () => resolveFirst(['第一页']));
     expect(result.current.pages).toEqual([
-      expect.objectContaining({ index: 1, translatedText: '第二页' }),
+      expect.objectContaining({ index: 1, translatedParagraphs: ['第二页'] }),
     ]);
   });
 
   it('skips after a trusted same-language detection', async () => {
-    mocks.getSources.mockReturnValue([{ index: 0, text: 'Hello PDF' }]);
+    mocks.getSources.mockReturnValue([{ index: 0, paragraphs: ['Hello PDF'] }]);
     mocks.resolveLanguage.mockResolvedValue({
       language: 'en',
       provenance: 'detected',
@@ -167,8 +205,8 @@ describe('usePDFTranslation', () => {
 
   it('keeps two spread pages in renderer order', async () => {
     mocks.getSources.mockReturnValue([
-      { index: 4, text: 'Left' },
-      { index: 5, text: 'Right' },
+      { index: 4, paragraphs: ['Left'] },
+      { index: 5, paragraphs: ['Right'] },
     ]);
     mocks.resolveLanguage.mockResolvedValue({
       language: 'en',
@@ -188,7 +226,7 @@ describe('usePDFTranslation', () => {
 
   it('refreshes after the PDF text-layer-rendered event', async () => {
     const view = makeView();
-    mocks.getSources.mockReturnValueOnce([]).mockReturnValue([{ index: 0, text: 'Ready' }]);
+    mocks.getSources.mockReturnValueOnce([]).mockReturnValue([{ index: 0, paragraphs: ['Ready'] }]);
     mocks.resolveLanguage.mockResolvedValue({
       language: 'en',
       provenance: 'metadata',
@@ -199,15 +237,15 @@ describe('usePDFTranslation', () => {
 
     act(() => view.dispatchEvent(new CustomEvent('pdf-text-layer-rendered')));
 
-    await waitFor(() => expect(result.current.pages[0]?.translatedText).toBe('就绪'));
+    await waitFor(() => expect(result.current.pages[0]?.translatedParagraphs).toEqual(['就绪']));
   });
 
   it('ignores a pending translation after a newer text-layer refresh', async () => {
     let resolveFirst!: (texts: string[]) => void;
     const view = makeView();
     mocks.getSources
-      .mockReturnValueOnce([{ index: 0, text: 'First layer' }])
-      .mockReturnValue([{ index: 1, text: 'Second layer' }]);
+      .mockReturnValueOnce([{ index: 0, paragraphs: ['First layer'] }])
+      .mockReturnValue([{ index: 1, paragraphs: ['Second layer'] }]);
     mocks.resolveLanguage.mockResolvedValue({
       language: 'en',
       provenance: 'metadata',
@@ -221,19 +259,19 @@ describe('usePDFTranslation', () => {
     await waitFor(() => expect(mocks.translate).toHaveBeenCalledTimes(1));
 
     act(() => view.dispatchEvent(new CustomEvent('pdf-text-layer-rendered')));
-    await waitFor(() => expect(result.current.pages[0]?.translatedText).toBe('第二层'));
+    await waitFor(() => expect(result.current.pages[0]?.translatedParagraphs).toEqual(['第二层']));
     await act(async () => resolveFirst(['第一层']));
 
     expect(result.current.pages).toEqual([
-      expect.objectContaining({ index: 1, translatedText: '第二层' }),
+      expect.objectContaining({ index: 1, translatedParagraphs: ['第二层'] }),
     ]);
   });
 
   it('ignores pending work after the view is replaced', async () => {
     let resolveFirst!: (texts: string[]) => void;
     mocks.getSources
-      .mockReturnValueOnce([{ index: 0, text: 'First view' }])
-      .mockReturnValue([{ index: 1, text: 'Replacement view' }]);
+      .mockReturnValueOnce([{ index: 0, paragraphs: ['First view'] }])
+      .mockReturnValue([{ index: 1, paragraphs: ['Replacement view'] }]);
     mocks.resolveLanguage.mockResolvedValue({
       language: 'en',
       provenance: 'metadata',
@@ -249,11 +287,11 @@ describe('usePDFTranslation', () => {
     await waitFor(() => expect(mocks.translate).toHaveBeenCalledTimes(1));
 
     rerender({ view: makeView() });
-    await waitFor(() => expect(result.current.pages[0]?.translatedText).toBe('替换页'));
+    await waitFor(() => expect(result.current.pages[0]?.translatedParagraphs).toEqual(['替换页']));
     await act(async () => resolveFirst(['旧视图']));
 
     expect(result.current.pages).toEqual([
-      expect.objectContaining({ index: 1, translatedText: '替换页' }),
+      expect.objectContaining({ index: 1, translatedParagraphs: ['替换页'] }),
     ]);
   });
 
@@ -273,7 +311,7 @@ describe('usePDFTranslation', () => {
   });
 
   it('retries only the failed page', async () => {
-    mocks.getSources.mockReturnValue([{ index: 0, text: 'Retry me' }]);
+    mocks.getSources.mockReturnValue([{ index: 0, paragraphs: ['Retry me'] }]);
     mocks.resolveLanguage.mockResolvedValue({
       language: 'en',
       provenance: 'metadata',
@@ -286,13 +324,15 @@ describe('usePDFTranslation', () => {
 
     act(() => result.current.retryPage(0));
 
-    await waitFor(() => expect(result.current.pages[0]?.translatedText).toBe('重试成功'));
+    await waitFor(() =>
+      expect(result.current.pages[0]?.translatedParagraphs).toEqual(['重试成功']),
+    );
   });
 
   it('ignores a pending retry after a newer refresh', async () => {
     let resolveRetry!: (texts: string[]) => void;
     const view = makeView();
-    mocks.getSources.mockReturnValue([{ index: 0, text: 'Retry me' }]);
+    mocks.getSources.mockReturnValue([{ index: 0, paragraphs: ['Retry me'] }]);
     mocks.resolveLanguage.mockResolvedValue({
       language: 'en',
       provenance: 'metadata',
@@ -309,15 +349,17 @@ describe('usePDFTranslation', () => {
     act(() => result.current.retryPage(0));
     await waitFor(() => expect(mocks.translate).toHaveBeenCalledTimes(2));
     act(() => view.dispatchEvent(new CustomEvent('pdf-text-layer-rendered')));
-    await waitFor(() => expect(result.current.pages[0]?.translatedText).toBe('刷新结果'));
+    await waitFor(() =>
+      expect(result.current.pages[0]?.translatedParagraphs).toEqual(['刷新结果']),
+    );
     await act(async () => resolveRetry(['过期重试']));
 
-    expect(result.current.pages[0]?.translatedText).toBe('刷新结果');
+    expect(result.current.pages[0]?.translatedParagraphs).toEqual(['刷新结果']);
   });
 
   it('does not retry translated or translating pages', async () => {
     let resolveTranslation!: (texts: string[]) => void;
-    mocks.getSources.mockReturnValue([{ index: 0, text: 'Already translating' }]);
+    mocks.getSources.mockReturnValue([{ index: 0, paragraphs: ['Already translating'] }]);
     mocks.resolveLanguage.mockResolvedValue({
       language: 'en',
       provenance: 'metadata',
@@ -342,7 +384,7 @@ describe('usePDFTranslation', () => {
 
   it('clears state and ignores pending work when translation is disabled', async () => {
     let resolveTranslation!: (texts: string[]) => void;
-    mocks.getSources.mockReturnValue([{ index: 0, text: 'Pending' }]);
+    mocks.getSources.mockReturnValue([{ index: 0, paragraphs: ['Pending'] }]);
     mocks.resolveLanguage.mockResolvedValue({
       language: 'en',
       provenance: 'metadata',
@@ -364,7 +406,7 @@ describe('usePDFTranslation', () => {
 
   it('does not publish a pending translation after unmount', async () => {
     let resolveTranslation!: (texts: string[]) => void;
-    mocks.getSources.mockReturnValue([{ index: 0, text: 'Pending unmount' }]);
+    mocks.getSources.mockReturnValue([{ index: 0, paragraphs: ['Pending unmount'] }]);
     mocks.resolveLanguage.mockResolvedValue({
       language: 'en',
       provenance: 'metadata',
@@ -394,7 +436,7 @@ describe('usePDFTranslation', () => {
     mocks.useTranslator.mockImplementation(({ provider }: { provider?: string }) => ({
       translate: provider === 'deepl' ? deeplTranslate : googleTranslate,
     }));
-    mocks.getSources.mockReturnValue([{ index: 0, text: 'Provider source' }]);
+    mocks.getSources.mockReturnValue([{ index: 0, paragraphs: ['Provider source'] }]);
     mocks.resolveLanguage.mockResolvedValue({
       language: 'en',
       provenance: 'metadata',
@@ -412,20 +454,22 @@ describe('usePDFTranslation', () => {
         target: 'zh-CN',
       }),
     );
-    await waitFor(() => expect(result.current.pages[0]?.translatedText).toBe('DeepL replacement'));
+    await waitFor(() =>
+      expect(result.current.pages[0]?.translatedParagraphs).toEqual(['DeepL replacement']),
+    );
     await act(async () => resolveGoogle(['Late Google result']));
 
     expect(result.current.pages).toEqual([
       expect.objectContaining({
-        sourceText: 'Provider source',
-        translatedText: 'DeepL replacement',
+        sourceParagraphs: ['Provider source'],
+        translatedParagraphs: ['DeepL replacement'],
       }),
     ]);
   });
 
   it('replaces a pending translation through the reactive target-language subscription', async () => {
     let resolveFirst!: (texts: string[]) => void;
-    mocks.getSources.mockReturnValue([{ index: 0, text: 'Target source' }]);
+    mocks.getSources.mockReturnValue([{ index: 0, paragraphs: ['Target source'] }]);
     mocks.resolveLanguage.mockResolvedValue({
       language: 'en',
       provenance: 'metadata',
@@ -447,14 +491,14 @@ describe('usePDFTranslation', () => {
       }),
     );
     await waitFor(() =>
-      expect(result.current.pages[0]?.translatedText).toBe('Traduction de remplacement'),
+      expect(result.current.pages[0]?.translatedParagraphs).toEqual(['Traduction de remplacement']),
     );
     await act(async () => resolveFirst(['Late zh-CN result']));
 
     expect(result.current.pages).toEqual([
       expect.objectContaining({
-        sourceText: 'Target source',
-        translatedText: 'Traduction de remplacement',
+        sourceParagraphs: ['Target source'],
+        translatedParagraphs: ['Traduction de remplacement'],
       }),
     ]);
   });

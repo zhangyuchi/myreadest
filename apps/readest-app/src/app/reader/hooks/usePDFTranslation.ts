@@ -15,10 +15,10 @@ export type PDFTranslationStatus = 'detecting' | 'translating' | 'translated' | 
 
 export interface PDFPageTranslation {
   index: number;
-  sourceText: string;
+  sourceParagraphs: string[];
   sourceLanguage: string;
   status: PDFTranslationStatus;
-  translatedText?: string;
+  translatedParagraphs?: string[];
   error?: string;
 }
 
@@ -28,6 +28,13 @@ export interface UsePDFTranslationResult {
 }
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+const alignedParagraphs = (sourceParagraphs: string[], translated: string[]) => {
+  const paragraphs = translated.map((paragraph) => paragraph.trim());
+  return paragraphs.length === sourceParagraphs.length && paragraphs.every(Boolean)
+    ? paragraphs
+    : null;
+};
 
 export function usePDFTranslation(
   bookKey: string,
@@ -78,9 +85,9 @@ export function usePDFTranslation(
       }
 
       setPages(
-        sources.map(({ index, text }) => ({
+        sources.map(({ index, paragraphs }) => ({
           index,
-          sourceText: text,
+          sourceParagraphs: paragraphs,
           sourceLanguage: 'AUTO',
           status: 'detecting',
         })),
@@ -90,7 +97,7 @@ export function usePDFTranslation(
         metadataLanguage,
         targetLanguage,
         sample: sources
-          .map(({ text }) => text)
+          .flatMap((source) => source.paragraphs)
           .join('\n')
           .slice(0, 500),
       });
@@ -107,51 +114,51 @@ export function usePDFTranslation(
       }
 
       setPages(
-        sources.map(({ index, text }) => ({
+        sources.map(({ index, paragraphs }) => ({
           index,
-          sourceText: text,
+          sourceParagraphs: paragraphs,
           sourceLanguage: resolved.language,
           status: 'translating',
         })),
       );
 
       const settled = await Promise.allSettled(
-        sources.map(({ text }) =>
-          translate([text], { source: resolved.language, target: targetLanguage }),
+        sources.map(({ paragraphs }) =>
+          translate(paragraphs, { source: resolved.language, target: targetLanguage }),
         ),
       );
       if (!isCurrent()) return;
 
       setPages(
-        sources.map(({ index, text }, resultIndex): PDFPageTranslation => {
+        sources.map(({ index, paragraphs }, resultIndex): PDFPageTranslation => {
           const result = settled[resultIndex]!;
           if (result.status === 'rejected') {
             return {
               index,
-              sourceText: text,
+              sourceParagraphs: paragraphs,
               sourceLanguage: resolved.language,
               status: 'error',
               error: errorMessage(result.reason),
             };
           }
 
-          const translatedText = result.value[0]?.trim();
-          if (!translatedText) {
+          const translatedParagraphs = alignedParagraphs(paragraphs, result.value);
+          if (!translatedParagraphs) {
             return {
               index,
-              sourceText: text,
+              sourceParagraphs: paragraphs,
               sourceLanguage: resolved.language,
               status: 'error',
-              error: 'Translation returned an empty response.',
+              error: 'Translation did not return one result for each paragraph.',
             };
           }
 
           return {
             index,
-            sourceText: text,
+            sourceParagraphs: paragraphs,
             sourceLanguage: resolved.language,
             status: 'translated',
-            translatedText,
+            translatedParagraphs,
           };
         }),
       );
@@ -193,24 +200,27 @@ export function usePDFTranslation(
         ),
       );
 
-      void translate([page.sourceText], {
+      void translate(page.sourceParagraphs, {
         source: page.sourceLanguage,
         target: targetLanguage,
       })
-        .then(([translatedText]) => {
+        .then((translated) => {
           if (generationRef.current !== generation) return;
           setPages((current) =>
             current.map((candidate) => {
-              if (candidate.index !== index || candidate.sourceText !== page.sourceText) {
+              if (
+                candidate.index !== index ||
+                candidate.sourceParagraphs !== page.sourceParagraphs
+              ) {
                 return candidate;
               }
-              const translated = translatedText?.trim();
-              return translated
-                ? { ...candidate, status: 'translated', translatedText: translated }
+              const translatedParagraphs = alignedParagraphs(page.sourceParagraphs, translated);
+              return translatedParagraphs
+                ? { ...candidate, status: 'translated', translatedParagraphs }
                 : {
                     ...candidate,
                     status: 'error',
-                    error: 'Translation returned an empty response.',
+                    error: 'Translation did not return one result for each paragraph.',
                   };
             }),
           );
@@ -219,7 +229,7 @@ export function usePDFTranslation(
           if (generationRef.current !== generation) return;
           setPages((current) =>
             current.map((candidate) =>
-              candidate.index === index && candidate.sourceText === page.sourceText
+              candidate.index === index && candidate.sourceParagraphs === page.sourceParagraphs
                 ? { ...candidate, status: 'error', error: errorMessage(error) }
                 : candidate,
             ),
