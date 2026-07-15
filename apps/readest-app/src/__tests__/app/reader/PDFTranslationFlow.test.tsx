@@ -6,7 +6,7 @@ import { useTextTranslation } from '@/app/reader/hooks/useTextTranslation';
 import type { FoliateView } from '@/types/view';
 
 const mocks = vi.hoisted(() => ({
-  translate: vi.fn().mockResolvedValue(['PDF 译文']),
+  translate: vi.fn().mockResolvedValue(['第一段。', '第二段。']),
   progress: { index: 0 },
   settings: {
     translationEnabled: true,
@@ -93,7 +93,21 @@ const makeView = () => {
   document.body.appendChild(renderer);
   fixtureRenderers.push(renderer);
   const pageDocument = iframe.contentDocument!;
-  pageDocument.body.innerHTML = '<div class="textLayer"><span>Rendered PDF source</span></div>';
+  pageDocument.body.innerHTML = '<div class="textLayer"></div>';
+  const textLayer = pageDocument.querySelector('.textLayer')!;
+  textLayer.getBoundingClientRect = () => rect(0, 1000);
+  const positionedSpans: Array<[string, number, number]> = [
+    ['Document header', 35, 45],
+    ['First body paragraph.', 190, 200],
+    ['Second body paragraph.', 270, 280],
+    ['Page footer', 965, 975],
+  ];
+  for (const [text, top, bottom] of positionedSpans) {
+    const span = pageDocument.createElement('span');
+    span.textContent = text;
+    span.getBoundingClientRect = () => rect(top, bottom);
+    textLayer.appendChild(span);
+  }
   Object.assign(renderer, {
     getContents: () => [{ doc: pageDocument, index: 0 }],
   });
@@ -114,15 +128,21 @@ const LegacyPDFHarness = ({ renderer }: { renderer: HTMLElement }) => {
 };
 
 describe('PDF translation flow', () => {
-  it('renders extracted PDF text in the external pane without mutating the iframe', async () => {
+  it('renders extracted PDF body paragraphs in the external pane without mutating the iframe', async () => {
     const { pageDocument, view } = makeView();
     render(<Harness view={view} />);
 
-    await waitFor(() => expect(screen.getByText('PDF 译文')).toBeTruthy());
-    expect(mocks.translate).toHaveBeenCalledWith(['Rendered PDF source'], {
-      source: 'en',
-      target: 'zh-CN',
-    });
+    await waitFor(() => expect(screen.getByText('第一段。')).toBeTruthy());
+    const paragraphs = screen.getAllByText(/第一段。|第二段。/);
+    expect(paragraphs).toHaveLength(2);
+    expect(paragraphs.map((paragraph) => paragraph.tagName)).toEqual(['P', 'P']);
+    expect(mocks.translate).toHaveBeenCalledWith(
+      ['First body paragraph.', 'Second body paragraph.'],
+      {
+        source: 'en',
+        target: 'zh-CN',
+      },
+    );
     expect(pageDocument.querySelector('.translation-target')).toBeNull();
   });
 

@@ -11,7 +11,7 @@ const PDFTranslationPane = ({ pages, onRetry }: PDFTranslationPaneProps) => {
   const _ = useTranslation();
   const paneRef = useRef<HTMLElement>(null);
   const visiblePageKey = useMemo(
-    () => pages.map((page) => `${page.index}:${page.sourceText}`).join('|'),
+    () => pages.map((page) => `${page.index}:${page.sourceParagraphs.join('\u001f')}`).join('|'),
     [pages],
   );
 
@@ -26,7 +26,10 @@ const PDFTranslationPane = ({ pages, onRetry }: PDFTranslationPaneProps) => {
       className='eink-bordered h-full min-h-0 min-w-0 overflow-y-auto border-base-300 bg-base-100 p-4 md:border-l max-md:border-t'
     >
       {pages.map((page) => (
-        <article key={`${page.index}:${page.sourceText}`} className='mb-6 last:mb-0'>
+        <article
+          key={`${page.index}:${page.sourceParagraphs.join('\u001f')}`}
+          className='mb-6 last:mb-0'
+        >
           <h2 className='mb-2 text-sm font-semibold opacity-70'>
             {_('Page')} {page.index + 1}
           </h2>
@@ -36,9 +39,15 @@ const PDFTranslationPane = ({ pages, onRetry }: PDFTranslationPaneProps) => {
               <span className='sr-only'>{_('Translating...')}</span>
             </div>
           )}
-          {page.status === 'translated' && (
-            <p className='whitespace-pre-wrap text-base leading-relaxed'>{page.translatedText}</p>
-          )}
+          {page.status === 'translated' &&
+            page.translatedParagraphs?.map((paragraph, paragraphIndex) => (
+              <p
+                key={`${page.index}:${paragraphIndex}`}
+                className='mb-4 last:mb-0 text-base leading-relaxed'
+              >
+                {paragraph}
+              </p>
+            ))}
           {page.status === 'error' && (
             <div role='alert' className='rounded border border-error p-3'>
               <p>{page.error || _('Translation failed')}</p>

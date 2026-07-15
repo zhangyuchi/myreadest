@@ -13,17 +13,17 @@ describe('PDFTranslationPane', () => {
         pages={[
           {
             index: 4,
-            sourceText: 'Left',
+            sourceParagraphs: ['Left'],
             sourceLanguage: 'en',
             status: 'translated',
-            translatedText: '左页',
+            translatedParagraphs: ['左页'],
           },
           {
             index: 5,
-            sourceText: 'Right',
+            sourceParagraphs: ['Right'],
             sourceLanguage: 'en',
             status: 'translated',
-            translatedText: '右页',
+            translatedParagraphs: ['右页'],
           },
         ]}
         onRetry={vi.fn()}
@@ -37,6 +37,27 @@ describe('PDFTranslationPane', () => {
     expect(sections[1]?.textContent).toContain('右页');
   });
 
+  it('renders each translated body paragraph separately', () => {
+    render(
+      <PDFTranslationPane
+        pages={[
+          {
+            index: 0,
+            sourceParagraphs: ['First paragraph.', 'Second paragraph.'],
+            sourceLanguage: 'en',
+            status: 'translated',
+            translatedParagraphs: ['第一段。', '第二段。'],
+          },
+        ]}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    const paragraphs = screen.getAllByText(/第一段。|第二段。/);
+    expect(paragraphs).toHaveLength(2);
+    expect(paragraphs.map((paragraph) => paragraph.tagName)).toEqual(['P', 'P']);
+  });
+
   it('shows an error and retries the failed page', () => {
     const onRetry = vi.fn();
     render(
@@ -44,7 +65,7 @@ describe('PDFTranslationPane', () => {
         pages={[
           {
             index: 2,
-            sourceText: 'Source',
+            sourceParagraphs: ['Source'],
             sourceLanguage: 'AUTO',
             status: 'error',
             error: 'API offline',
@@ -65,7 +86,7 @@ describe('PDFTranslationPane', () => {
         pages={[
           {
             index: 2,
-            sourceText: 'Source',
+            sourceParagraphs: ['Source'],
             sourceLanguage: 'AUTO',
             status: 'translating',
           },
@@ -78,20 +99,20 @@ describe('PDFTranslationPane', () => {
   });
 
   it('scrolls to the beginning when the visible page changes', () => {
-    const page = (index: number, translatedText: string) => ({
+    const page = (index: number, translatedParagraphs: string[]) => ({
       index,
-      sourceText: `Source ${index}`,
+      sourceParagraphs: [`Source ${index}`],
       sourceLanguage: 'en',
       status: 'translated' as const,
-      translatedText,
+      translatedParagraphs,
     });
     const { rerender } = render(
-      <PDFTranslationPane pages={[page(0, '第一页')]} onRetry={vi.fn()} />,
+      <PDFTranslationPane pages={[page(0, ['第一页'])]} onRetry={vi.fn()} />,
     );
     const pane = screen.getByLabelText('PDF Translation');
     pane.scrollTop = 120;
 
-    rerender(<PDFTranslationPane pages={[page(1, '第二页')]} onRetry={vi.fn()} />);
+    rerender(<PDFTranslationPane pages={[page(1, ['第二页'])]} onRetry={vi.fn()} />);
 
     expect(pane.scrollTop).toBe(0);
   });
