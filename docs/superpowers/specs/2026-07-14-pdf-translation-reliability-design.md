@@ -9,15 +9,43 @@ The implementation has focused automated coverage, but this document remains `Ap
 planning` until the planned interactive PDF smoke test is executed. No browser smoke-test result is
 claimed here.
 
-- `pnpm --dir apps/readest-app exec vitest run` was run without the app dotenv wrapper and failed
-  broadly after Node reported: ``Warning: `--localstorage-file` was provided without a valid
-  path``. This suite is not recorded as green.
-- `pnpm --dir apps/readest-app exec dotenv -e .env -e .env.test.local -- vitest run` for the nine
-  PDF regression files passed: 9 test files and 53 tests. This includes the focused pending-state
-  accessibility assertion added during final verification.
-- `pnpm --dir apps/readest-app lint` exited 2 on the two existing direct `FoliateView` test casts
-  in `src/__tests__/app/reader/utils/pdfTranslation.test.ts` at lines 44 and 58 (`TS2352`). No
-  unrelated cast change was made.
+- Raw full-suite command:
+
+  ```bash
+  pnpm --dir apps/readest-app exec vitest run
+  ```
+
+  It failed with a nonzero exit state; it is not recorded as green. Node emitted the precise
+  environment diagnostic: ``Warning: `--localstorage-file` was provided without a valid path``.
+  The resulting failures included tests whose `localStorage` setup was unavailable or invalid.
+
+- Focused PDF regression command:
+
+  ```bash
+  pnpm --dir apps/readest-app exec dotenv -e .env -e .env.test.local -- vitest run \
+    src/__tests__/services/translators/providers/llm.test.ts \
+    src/__tests__/hooks/useTranslator.test.tsx \
+    src/__tests__/services/translators/pdfLanguage.test.ts \
+    src/__tests__/app/reader/utils/pdfTranslation.test.ts \
+    src/__tests__/app/reader/hooks/usePDFTranslation.test.tsx \
+    src/__tests__/app/reader/components/PDFTranslationPane.test.tsx \
+    src/__tests__/app/reader/PDFTranslationFlow.test.tsx \
+    src/__tests__/app/reader/hooks/useTextTranslation.test.ts \
+    src/__tests__/app/reader/FoliateViewerPDFTranslationLayout.test.tsx
+  ```
+
+  It passed: 9 test files and 53 tests. This includes the focused pending-state accessibility
+  assertion added during final verification.
+
+- `pnpm --dir apps/readest-app lint` exited 2 with these exact `TS2352` diagnostics:
+
+  ```text
+  src/__tests__/app/reader/utils/pdfTranslation.test.ts(44,18): error TS2352: Conversion of type '{ renderer: HTMLDivElement & { getContents: () => { doc: Document; index: number; }[]; }; }' to type 'FoliateView' may be a mistake because neither type sufficiently overlaps with the other.
+  src/__tests__/app/reader/utils/pdfTranslation.test.ts(58,18): error TS2352: Conversion of type '{ renderer: HTMLDivElement & { getContents: () => { doc: Document; index: number; }[]; }; }' to type 'FoliateView' may be a mistake because neither type sufficiently overlaps with the other.
+  ```
+
+  `git diff --exit-code 84bd1325 -- apps/readest-app/src/__tests__/app/reader/utils/pdfTranslation.test.ts`
+  exited 0, proving the Task 7 commit did not modify those cast lines.
 - `pnpm --dir apps/readest-app format:check` passed (`Checked 1754 files in 3s. No fixes
   applied.`), and `git diff --check` passed.
 - `git diff origin/main...HEAD -- apps/readest-app/src/services/translators
