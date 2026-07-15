@@ -143,7 +143,7 @@ describe('PDF translation flow', () => {
 
     await waitFor(() =>
       expect(screen.getByTestId('published-markdown').textContent).toBe(
-        '# 翻译标题\n\n正文译文\n\n- 列表译文\n\n1. 编号译文\n\n> 引文译文',
+        '# 翻译标题\n\n正文译文\n\n- 列表译文\n1. 编号译文\n\n> 引文译文',
       ),
     );
     expect(mocks.translate).toHaveBeenCalledTimes(1);

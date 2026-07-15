@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FoliateView } from '@/types/view';
-import { usePDFTranslation } from '@/app/reader/hooks/usePDFTranslation';
+import { formatPDFMarkdown, usePDFTranslation } from '@/app/reader/hooks/usePDFTranslation';
 import type { PDFSourceBlock } from '@/app/reader/utils/pdfTranslation';
 
 const mocks = vi.hoisted(() => ({
@@ -116,7 +116,7 @@ describe('usePDFTranslation', () => {
       expect(result.current.pages[0]).toEqual(
         expect.objectContaining({
           status: 'translated',
-          translatedMarkdown: '# 翻译标题\n\n正文译文\n\n- 列表译文\n\n1. 编号译文\n\n> 引文译文',
+          translatedMarkdown: '# 翻译标题\n\n正文译文\n\n- 列表译文\n1. 编号译文\n\n> 引文译文',
         }),
       ),
     );
@@ -199,20 +199,34 @@ describe('usePDFTranslation', () => {
     expect(result.current.pages[0]?.translatedMarkdown).toBeUndefined();
   });
 
-  it('keeps provider HTML-like text as escaped Markdown source text', async () => {
+  it('keeps provider HTML-like and strikethrough-like text as escaped Markdown source text', async () => {
     mocks.getSources.mockReturnValue([{ index: 0, blocks: sourceBlocks('Source text') }]);
     mocks.resolveLanguage.mockResolvedValue({
       language: 'en',
       provenance: 'detected',
       skipTranslation: false,
     });
-    mocks.translate.mockResolvedValue(['<img src=x onerror=alert(1)>']);
+    mocks.translate.mockResolvedValue(['~~<img src=x onerror=alert(1)>~~']);
 
     const view = makeView();
     const { result } = renderHook(() => usePDFTranslation('book-1', view));
 
     await waitFor(() => expect(result.current.pages[0]?.status).toBe('translated'));
-    expect(result.current.pages[0]?.translatedMarkdown).toBe('&lt;img src=x onerror=alert(1)&gt;');
+    expect(result.current.pages[0]?.translatedMarkdown).toBe(
+      '\\~\\~&lt;img src=x onerror=alert(1)&gt;\\~\\~',
+    );
+  });
+
+  it('joins mixed adjacent list blocks with one newline', () => {
+    expect(
+      formatPDFMarkdown(
+        [
+          { kind: 'unordered-list', text: 'Source bullet' },
+          { kind: 'ordered-list', text: 'Source ordered item' },
+        ],
+        ['Bullet translation', 'Ordered translation'],
+      ),
+    ).toBe('- Bullet translation\n1. Ordered translation');
   });
 
   it('ignores a late result after the visible page changes', async () => {

@@ -41,7 +41,7 @@ const escapeProviderMarkdown = (text: string) =>
     .replace(/&/gu, '&amp;')
     .replace(/</gu, '&lt;')
     .replace(/>/gu, '&gt;')
-    .replace(/([\\`*_{}\[\]#+\-.!|])/gu, '\\$1');
+    .replace(/([\\`*_{}\[\]#+\-.!|~])/gu, '\\$1');
 
 const isList = (block: PDFSourceBlock) =>
   block.kind === 'unordered-list' || block.kind === 'ordered-list';
@@ -60,11 +60,7 @@ export const formatPDFMarkdown = (blocks: PDFSourceBlock[], translations: string
               : '';
     const previousBlock = blocks[index - 1];
     const separator =
-      index === 0
-        ? ''
-        : previousBlock && isList(previousBlock) && previousBlock.kind === block.kind
-          ? '\n'
-          : '\n\n';
+      index === 0 ? '' : previousBlock && isList(previousBlock) && isList(block) ? '\n' : '\n\n';
     return `${markdown}${separator}${prefix}${escapeProviderMarkdown(translations[index]!)}`;
   }, '');
 
