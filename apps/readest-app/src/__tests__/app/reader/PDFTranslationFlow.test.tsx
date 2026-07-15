@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import PDFTranslationPane from '@/app/reader/components/PDFTranslationPane';
 import { usePDFTranslation } from '@/app/reader/hooks/usePDFTranslation';
 import { useTextTranslation } from '@/app/reader/hooks/useTextTranslation';
@@ -65,6 +65,12 @@ class ImmediateIntersectionObserver {
 
 vi.stubGlobal('IntersectionObserver', ImmediateIntersectionObserver);
 
+const fixtureRenderers: HTMLElement[] = [];
+
+afterEach(() => {
+  fixtureRenderers.splice(0).forEach((renderer) => renderer.remove());
+});
+
 const rect = (top: number, bottom: number): DOMRect =>
   ({
     top,
@@ -85,6 +91,7 @@ const makeView = () => {
   iframe.getBoundingClientRect = () => rect(0, 800);
   renderer.appendChild(iframe);
   document.body.appendChild(renderer);
+  fixtureRenderers.push(renderer);
   const pageDocument = iframe.contentDocument!;
   pageDocument.body.innerHTML = '<div class="textLayer"><span>Rendered PDF source</span></div>';
   Object.assign(renderer, {

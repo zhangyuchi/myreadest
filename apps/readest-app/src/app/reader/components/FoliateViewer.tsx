@@ -1004,7 +1004,7 @@ const FoliateViewer: React.FC<{
       )}
       <div
         className={clsx(
-          'absolute h-full w-full min-h-0 min-w-0',
+          'foliate-viewer absolute h-full w-full min-h-0 min-w-0',
           showPDFTranslation && 'flex flex-col md:flex-row',
         )}
       >
@@ -1013,9 +1013,9 @@ const FoliateViewer: React.FC<{
           role='main'
           aria-label={_('Book Content')}
           className={clsx(
-            'foliate-viewer min-h-0 min-w-0 flex-1 focus:outline-none',
+            'foliate-viewer focus:outline-none',
             viewState?.loading && 'bg-base-100',
-            showPDFTranslation && 'basis-1/2',
+            showPDFTranslation ? 'min-h-0 min-w-0 flex-1 basis-1/2' : 'absolute h-full w-full',
           )}
           style={{
             paddingTop: scrollMargins.top,
