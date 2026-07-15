@@ -1546,7 +1546,7 @@ git commit -m "fix: display PDF translations beside source pages"
 - Consumes: all implementation and regression tests from Tasks 1-6.
 - Produces: verified final branch state and documentation that records actual validation evidence.
 
-- [ ] **Step 1: Run the complete app unit suite**
+- [x] **Step 1: Run the complete app unit suite**
 
 Run:
 
@@ -1559,7 +1559,7 @@ capture the exact output, rerun the eight focused files from Task 6 directly wit
 run`, and report the full-suite environment failure separately rather than calling the full suite
 green.
 
-- [ ] **Step 2: Run app lint and production type checks**
+- [x] **Step 2: Run app lint and production type checks**
 
 Run:
 
@@ -1599,7 +1599,7 @@ In the design document, change `**Status:** Approved for planning` to `**Status:
 after Steps 1-3 have evidence. Add a `## Validation` section containing the exact commands run and
 their results. In this plan, check completed boxes only for steps actually executed.
 
-- [ ] **Step 5: Review the complete diff for all three original defects**
+- [x] **Step 5: Review the complete diff for all three original defects**
 
 Run:
 

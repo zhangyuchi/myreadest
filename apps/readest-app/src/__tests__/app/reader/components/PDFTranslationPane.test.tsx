@@ -59,6 +59,24 @@ describe('PDFTranslationPane', () => {
     expect(onRetry).toHaveBeenCalledWith(2);
   });
 
+  it('exposes pending translation state to assistive technology', () => {
+    render(
+      <PDFTranslationPane
+        pages={[
+          {
+            index: 2,
+            sourceText: 'Source',
+            sourceLanguage: 'AUTO',
+            status: 'translating',
+          },
+        ]}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole('status').textContent).toContain('Translating...');
+  });
+
   it('scrolls to the beginning when the visible page changes', () => {
     const page = (index: number, translatedText: string) => ({
       index,

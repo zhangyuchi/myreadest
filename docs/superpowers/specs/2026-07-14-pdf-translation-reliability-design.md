@@ -3,6 +3,29 @@
 **Date:** 2026-07-14
 **Status:** Approved for planning
 
+## Validation
+
+The implementation has focused automated coverage, but this document remains `Approved for
+planning` until the planned interactive PDF smoke test is executed. No browser smoke-test result is
+claimed here.
+
+- `pnpm --dir apps/readest-app exec vitest run` was run without the app dotenv wrapper and failed
+  broadly after Node reported: ``Warning: `--localstorage-file` was provided without a valid
+  path``. This suite is not recorded as green.
+- `pnpm --dir apps/readest-app exec dotenv -e .env -e .env.test.local -- vitest run` for the nine
+  PDF regression files passed: 9 test files and 53 tests. This includes the focused pending-state
+  accessibility assertion added during final verification.
+- `pnpm --dir apps/readest-app lint` exited 2 on the two existing direct `FoliateView` test casts
+  in `src/__tests__/app/reader/utils/pdfTranslation.test.ts` at lines 44 and 58 (`TS2352`). No
+  unrelated cast change was made.
+- `pnpm --dir apps/readest-app format:check` passed (`Checked 1754 files in 3s. No fixes
+  applied.`), and `git diff --check` passed.
+- `git diff origin/main...HEAD -- apps/readest-app/src/services/translators
+  apps/readest-app/src/app/reader apps/readest-app/src/utils/walk.ts packages/foliate-js/pdf.js
+  docs/superpowers` was reviewed. The PDF path has no iframe translation-node append, provider
+  failures are not converted to source text, and PDF language resolution falls back to `AUTO`.
+  The EPUB-only `detected === 'und'` branch is bypassed for PDF callers.
+
 ## Context
 
 PDF translation currently has three independent failure paths:
