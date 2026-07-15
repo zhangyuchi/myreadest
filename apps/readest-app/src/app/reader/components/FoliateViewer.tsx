@@ -1013,7 +1013,7 @@ const FoliateViewer: React.FC<{
           role='main'
           aria-label={_('Book Content')}
           className={clsx(
-            'foliate-viewer focus:outline-none',
+            'foliate-source-pane focus:outline-none',
             viewState?.loading && 'bg-base-100',
             showPDFTranslation ? 'min-h-0 min-w-0 flex-1 basis-1/2' : 'absolute h-full w-full',
           )}

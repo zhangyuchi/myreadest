@@ -1,15 +1,39 @@
-import { cleanup, render } from '@testing-library/react';
+import { act, cleanup, render, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => {
-  const view = Object.assign(document.createElement('foliate-view'), {
-    open: vi.fn(() => new Promise<void>(() => {})),
-  });
+  const createView = () => {
+    let resolveOpen: () => void;
+    const renderer = Object.assign(document.createElement('div'), {
+      getContents: () => [],
+      setStyles: vi.fn(),
+    });
+    const view = Object.assign(document.createElement('foliate-view'), {
+      book: { transformTarget: new EventTarget() },
+      goToFraction: vi.fn().mockResolvedValue(undefined),
+      init: vi.fn().mockResolvedValue(undefined),
+      open: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveOpen = resolve;
+          }),
+      ),
+      renderer,
+    });
+    return { resolveOpen: () => resolveOpen(), view };
+  };
+  let current = createView();
   return {
     pdfTranslation: { pages: [] as { index: number }[], retryPage: vi.fn() },
+    resolveOpen: () => current.resolveOpen(),
+    resetView: () => {
+      current = createView();
+    },
     usePDFTranslation: vi.fn(),
     useTextTranslation: vi.fn(),
-    view,
+    get view() {
+      return current.view;
+    },
   };
 });
 
@@ -138,6 +162,9 @@ vi.mock('@/utils/scrollable', () => ({
 }));
 vi.mock('@/styles/fonts', () => ({ mountAdditionalFonts: vi.fn(), mountCustomFont: vi.fn() }));
 vi.mock('@/utils/warichu', () => ({ layoutWarichu: vi.fn(), relayoutWarichu: vi.fn() }));
+vi.mock('@/utils/insets', () => ({
+  getViewInsets: () => ({ top: 0, right: 0, bottom: 0, left: 0 }),
+}));
 vi.mock('@/app/reader/utils/wordlensSection', () => ({ refreshSectionGlosses: vi.fn() }));
 vi.mock('@/components/Spinner', () => ({ default: () => null }));
 vi.mock('@/app/reader/components/BrightnessOverlay', () => ({ default: () => null }));
@@ -156,6 +183,7 @@ afterEach(() => {
   mocks.usePDFTranslation.mockClear();
   mocks.useTextTranslation.mockClear();
   mocks.view.remove();
+  mocks.resetView();
 });
 
 const renderViewer = () =>
@@ -170,29 +198,44 @@ const renderViewer = () =>
   );
 
 describe('FoliateViewer PDF translation layout', () => {
-  it('keeps the reader full size when the PDF translation pane is hidden', () => {
+  it('keeps the reader full size when the PDF translation pane is hidden', async () => {
     const { getByRole, queryByTestId } = renderViewer();
+    await waitFor(() => expect(mocks.view.open).toHaveBeenCalled());
     const reader = getByRole('main');
 
     expect(reader.className).toContain('absolute');
     expect(reader.className).toContain('h-full');
     expect(reader.className).toContain('w-full');
+    expect(reader.className).not.toContain('foliate-viewer');
     expect(reader.parentElement?.className).toContain('foliate-viewer');
     expect(queryByTestId('pdf-translation-pane')).toBeNull();
     expect(mocks.useTextTranslation).toHaveBeenCalledWith('book-1', null);
     expect(mocks.usePDFTranslation).toHaveBeenCalledWith('book-1', null);
   });
 
-  it('splits the PDF reader and external translation pane when pages are available', () => {
+  it('splits the PDF reader and external translation pane when pages are available', async () => {
     mocks.pdfTranslation.pages = [{ index: 0 }];
     const { getByRole, getByTestId } = renderViewer();
+    await waitFor(() => expect(mocks.view.open).toHaveBeenCalled());
     const reader = getByRole('main');
 
     expect(reader.className).toContain('flex-1');
     expect(reader.className).toContain('basis-1/2');
+    expect(reader.className).not.toContain('foliate-viewer');
     expect(reader.parentElement?.className).toContain('flex');
     expect(reader.parentElement?.className).toContain('flex-col');
     expect(reader.parentElement?.className).toContain('md:flex-row');
     expect(getByTestId('pdf-translation-pane').parentElement?.className).toContain('basis-1/2');
+  });
+
+  it('routes PDF translation through the mounted Foliate view after opening', async () => {
+    renderViewer();
+
+    await waitFor(() => expect(mocks.view.open).toHaveBeenCalled());
+    await act(async () => mocks.resolveOpen());
+
+    await waitFor(() => expect(mocks.usePDFTranslation).toHaveBeenCalledWith('book-1', mocks.view));
+    expect(mocks.useTextTranslation.mock.calls).toEqual(expect.arrayContaining([['book-1', null]]));
+    expect(mocks.useTextTranslation.mock.calls.every(([, view]) => view === null)).toBe(true);
   });
 });
