@@ -34,10 +34,9 @@ export function usePDFTranslation(
   view: FoliateView | null,
 ): UsePDFTranslationResult {
   const _ = useTranslation();
-  const getViewSettings = useReaderStore((state) => state.getViewSettings);
+  const settings = useReaderStore((state) => state.viewStates[bookKey]?.viewSettings ?? null);
   const getBookData = useBookDataStore((state) => state.getBookData);
   const progress = useBookProgress(bookKey);
-  const settings = getViewSettings(bookKey);
   const bookData = getBookData(bookKey);
   const enabled =
     view !== null && bookData?.book?.format === 'PDF' && !!settings?.translationEnabled;
@@ -183,7 +182,7 @@ export function usePDFTranslation(
   const retryPage = useCallback(
     (index: number) => {
       const page = pagesRef.current.find((candidate) => candidate.index === index);
-      if (!page || !enabled) return;
+      if (!page || page.status !== 'error' || !enabled) return;
 
       const generation = ++generationRef.current;
       setPages((current) =>
