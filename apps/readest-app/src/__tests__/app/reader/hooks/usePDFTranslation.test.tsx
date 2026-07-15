@@ -160,6 +160,29 @@ describe('usePDFTranslation', () => {
     expect(result.current.pages[0]?.translatedParagraphs).toBeUndefined();
   });
 
+  it('publishes an error when a translated paragraph is blank after trimming', async () => {
+    mocks.getSources.mockReturnValue([
+      { index: 0, paragraphs: ['First body paragraph.', 'Second body paragraph.'] },
+    ]);
+    mocks.resolveLanguage.mockResolvedValue({
+      language: 'en',
+      provenance: 'detected',
+      skipTranslation: false,
+    });
+    mocks.translate.mockResolvedValue(['第一段。', '   ']);
+
+    const view = makeView();
+    const { result } = renderHook(() => usePDFTranslation('book-1', view));
+
+    await waitFor(() => expect(result.current.pages[0]?.status).toBe('error'));
+    expect(result.current.pages[0]).toEqual(
+      expect.objectContaining({
+        error: 'Translation did not return one result for each paragraph.',
+      }),
+    );
+    expect(result.current.pages[0]?.translatedParagraphs).toBeUndefined();
+  });
+
   it('ignores a late result after the visible page changes', async () => {
     let resolveFirst!: (texts: string[]) => void;
     mocks.getSources
