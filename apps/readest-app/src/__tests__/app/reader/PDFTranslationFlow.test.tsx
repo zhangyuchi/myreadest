@@ -136,7 +136,9 @@ describe('PDF translation flow', () => {
     const paragraphs = screen.getAllByText(/第一段。|第二段。/);
     expect(paragraphs).toHaveLength(2);
     expect(paragraphs.map((paragraph) => paragraph.tagName)).toEqual(['P', 'P']);
-    expect(mocks.translate).toHaveBeenCalledWith(
+    expect(mocks.translate).toHaveBeenCalledTimes(1);
+    expect(mocks.translate).toHaveBeenNthCalledWith(
+      1,
       ['First body paragraph.', 'Second body paragraph.'],
       {
         source: 'en',
