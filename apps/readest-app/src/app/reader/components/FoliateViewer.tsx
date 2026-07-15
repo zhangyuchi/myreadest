@@ -67,6 +67,7 @@ import { TransformContext } from '@/services/transformers/types';
 import { transformContent } from '@/services/transformService';
 import { lockScreenOrientation } from '@/utils/bridge';
 import { useTextTranslation } from '../hooks/useTextTranslation';
+import { usePDFTranslation } from '../hooks/usePDFTranslation';
 import { useBookCoverAutoSave } from '../hooks/useAutoSaveBookCover';
 import { useDiscordPresence } from '@/hooks/useDiscordPresence';
 import { manageSyntaxHighlighting } from '@/utils/highlightjs';
@@ -89,6 +90,7 @@ import KOSyncConflictResolver from './KOSyncResolver';
 import ImageViewer from './ImageViewer';
 import TableViewer from './TableViewer';
 import { TTS_MINI_PLAYER_CLEARANCE } from './tts/TTSMiniPlayer';
+import PDFTranslationPane from './PDFTranslationPane';
 
 declare global {
   interface Window {
@@ -131,6 +133,7 @@ const FoliateViewer: React.FC<{
   const viewSettings = getViewSettings(bookKey);
 
   const viewRef = useRef<FoliateView | null>(null);
+  const [mountedView, setMountedView] = useState<FoliateView | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const isViewCreated = useRef(false);
   const doubleClickDisabled = useRef(!!viewSettings?.disableDoubleClick);
@@ -167,7 +170,11 @@ const FoliateViewer: React.FC<{
   useBookCoverAutoSave(bookKey);
   const { syncState, conflictDetails, resolveWithLocal, resolveWithRemote } = useKOSync(bookKey);
   useFileSync(bookKey);
-  useTextTranslation(bookKey, viewRef.current);
+  const isPDF = bookData?.book?.format === 'PDF';
+  useTextTranslation(bookKey, isPDF ? null : mountedView);
+  const pdfTranslation = usePDFTranslation(bookKey, isPDF ? mountedView : null);
+  const showPDFTranslation =
+    isPDF && !!viewSettings?.translationEnabled && pdfTranslation.pages.length > 0;
 
   // Coalesce setProgress writes within a single animation frame.
   //
@@ -688,6 +695,7 @@ const FoliateViewer: React.FC<{
       await view.open(bookDoc);
       // make sure we can listen renderer events after opening book
       viewRef.current = view;
+      setMountedView(view);
       setFoliateView(bookKey, view);
 
       const { book } = view;
@@ -995,20 +1003,33 @@ const FoliateViewer: React.FC<{
         />
       )}
       <div
-        ref={containerRef}
-        role='main'
-        aria-label={_('Book Content')}
         className={clsx(
-          'foliate-viewer absolute h-[100%] w-[100%] focus:outline-none',
-          viewState?.loading && 'bg-base-100',
+          'absolute h-full w-full min-h-0 min-w-0',
+          showPDFTranslation && 'flex flex-col md:flex-row',
         )}
-        style={{
-          paddingTop: scrollMargins.top,
-          paddingBottom: scrollMargins.bottom,
-        }}
-        {...mouseHandlers}
-        {...touchHandlers}
-      />
+      >
+        <div
+          ref={containerRef}
+          role='main'
+          aria-label={_('Book Content')}
+          className={clsx(
+            'foliate-viewer min-h-0 min-w-0 flex-1 focus:outline-none',
+            viewState?.loading && 'bg-base-100',
+            showPDFTranslation && 'basis-1/2',
+          )}
+          style={{
+            paddingTop: scrollMargins.top,
+            paddingBottom: scrollMargins.bottom,
+          }}
+          {...mouseHandlers}
+          {...touchHandlers}
+        />
+        {showPDFTranslation && (
+          <div className='min-h-0 min-w-0 flex-1 basis-1/2'>
+            <PDFTranslationPane pages={pdfTranslation.pages} onRetry={pdfTranslation.retryPage} />
+          </div>
+        )}
+      </div>
       {autoscrollAnchor && <AutoscrollIndicator anchor={autoscrollAnchor} />}
       {autoScroll.active && (
         <AutoScrollControl

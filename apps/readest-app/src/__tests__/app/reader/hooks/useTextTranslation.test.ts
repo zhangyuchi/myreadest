@@ -79,4 +79,17 @@ describe('createTranslationTargetNode', () => {
 
     expect(wrapper.firstChild?.nodeName).toBe('BR');
   });
+
+  it('does not create PDF-specific inline layout styles', () => {
+    const wrapper = createTranslationTargetNode({
+      translatedText: 'Translation',
+      lang: 'en',
+      targetBlockClassName: 'translation-target-block',
+      hidden: false,
+      widthLineBreak: false,
+    });
+
+    expect(wrapper.style.position).toBe('');
+    expect(wrapper.style.width).toBe('');
+  });
 });
