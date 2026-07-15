@@ -1,12 +1,13 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import PDFTranslationPane from '@/app/reader/components/PDFTranslationPane';
 import { usePDFTranslation } from '@/app/reader/hooks/usePDFTranslation';
 import { useTextTranslation } from '@/app/reader/hooks/useTextTranslation';
 import type { FoliateView } from '@/types/view';
 
 const mocks = vi.hoisted(() => ({
-  translate: vi.fn().mockResolvedValue(['第一段。', '第二段。']),
+  translate: vi
+    .fn()
+    .mockResolvedValue(['翻译标题', '正文译文', '列表译文', '编号译文', '引文译文']),
   progress: { index: 0 },
   settings: {
     translationEnabled: true,
@@ -96,16 +97,20 @@ const makeView = () => {
   pageDocument.body.innerHTML = '<div class="textLayer"></div>';
   const textLayer = pageDocument.querySelector('.textLayer')!;
   textLayer.getBoundingClientRect = () => rect(0, 1000);
-  const positionedSpans: Array<[string, number, number]> = [
+  const positionedSpans: Array<[string, number, number, number?]> = [
     ['Document header', 35, 45],
-    ['First body paragraph.', 190, 200],
-    ['Second body paragraph.', 270, 280],
+    ['Source heading', 150, 190],
+    ['Source body', 220, 230],
+    ['• Source bullet', 250, 260],
+    ['2) Source ordered item', 280, 290],
+    ['Source quote', 310, 320, 120],
     ['Page footer', 965, 975],
   ];
-  for (const [text, top, bottom] of positionedSpans) {
+  for (const [text, top, bottom, left = 0] of positionedSpans) {
     const span = pageDocument.createElement('span');
     span.textContent = text;
-    span.getBoundingClientRect = () => rect(top, bottom);
+    span.getBoundingClientRect = () =>
+      ({ ...rect(top, bottom), left, right: left + 100 }) as DOMRect;
     textLayer.appendChild(span);
   }
   Object.assign(renderer, {
@@ -118,8 +123,12 @@ const makeView = () => {
 };
 
 const Harness = ({ view }: { view: FoliateView }) => {
-  const { pages, retryPage } = usePDFTranslation('book-1', view);
-  return <PDFTranslationPane pages={pages} onRetry={retryPage} />;
+  const { pages } = usePDFTranslation('book-1', view);
+  return (
+    <>
+      <output data-testid='published-markdown'>{pages[0]?.translatedMarkdown}</output>
+    </>
+  );
 };
 
 const LegacyPDFHarness = ({ renderer }: { renderer: HTMLElement }) => {
@@ -128,18 +137,19 @@ const LegacyPDFHarness = ({ renderer }: { renderer: HTMLElement }) => {
 };
 
 describe('PDF translation flow', () => {
-  it('renders extracted PDF body paragraphs in the external pane without mutating the iframe', async () => {
+  it('publishes translated Markdown from extracted PDF source blocks without mutating the iframe', async () => {
     const { pageDocument, view } = makeView();
     render(<Harness view={view} />);
 
-    await waitFor(() => expect(screen.getByText('第一段。')).toBeTruthy());
-    const paragraphs = screen.getAllByText(/第一段。|第二段。/);
-    expect(paragraphs).toHaveLength(2);
-    expect(paragraphs.map((paragraph) => paragraph.tagName)).toEqual(['P', 'P']);
+    await waitFor(() =>
+      expect(screen.getByTestId('published-markdown').textContent).toBe(
+        '# 翻译标题\n\n正文译文\n\n- 列表译文\n\n1. 编号译文\n\n> 引文译文',
+      ),
+    );
     expect(mocks.translate).toHaveBeenCalledTimes(1);
     expect(mocks.translate).toHaveBeenNthCalledWith(
       1,
-      ['First body paragraph.', 'Second body paragraph.'],
+      ['Source heading', 'Source body', 'Source bullet', 'Source ordered item', 'Source quote'],
       {
         source: 'en',
         target: 'zh-CN',

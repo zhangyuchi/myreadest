@@ -9,16 +9,16 @@ import { useReaderStore } from '@/store/readerStore';
 import type { FoliateView } from '@/types/view';
 import { eventDispatcher } from '@/utils/event';
 import { getLocale } from '@/utils/misc';
-import { getVisiblePDFPageSources } from '../utils/pdfTranslation';
+import { getVisiblePDFPageSources, type PDFSourceBlock } from '../utils/pdfTranslation';
 
 export type PDFTranslationStatus = 'detecting' | 'translating' | 'translated' | 'error';
 
 export interface PDFPageTranslation {
   index: number;
-  sourceParagraphs: string[];
+  sourceBlocks: PDFSourceBlock[];
   sourceLanguage: string;
   status: PDFTranslationStatus;
-  translatedParagraphs?: string[];
+  translatedMarkdown?: string;
   error?: string;
 }
 
@@ -29,12 +29,44 @@ export interface UsePDFTranslationResult {
 
 const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-const alignedParagraphs = (sourceParagraphs: string[], translated: string[]) => {
-  const paragraphs = translated.map((paragraph) => paragraph.trim());
-  return paragraphs.length === sourceParagraphs.length && paragraphs.every(Boolean)
-    ? paragraphs
+const alignedTranslations = (sourceBlocks: PDFSourceBlock[], translated: string[]) => {
+  const translations = translated.map((translation) => translation.trim());
+  return translations.length === sourceBlocks.length && translations.every(Boolean)
+    ? translations
     : null;
 };
+
+const escapeProviderMarkdown = (text: string) =>
+  text
+    .replace(/&/gu, '&amp;')
+    .replace(/</gu, '&lt;')
+    .replace(/>/gu, '&gt;')
+    .replace(/([\\`*_{}\[\]#+\-.!|])/gu, '\\$1');
+
+const isList = (block: PDFSourceBlock) =>
+  block.kind === 'unordered-list' || block.kind === 'ordered-list';
+
+export const formatPDFMarkdown = (blocks: PDFSourceBlock[], translations: string[]) =>
+  blocks.reduce((markdown, block, index) => {
+    const prefix =
+      block.kind === 'heading'
+        ? `${'#'.repeat(block.headingLevel ?? 1)} `
+        : block.kind === 'unordered-list'
+          ? '- '
+          : block.kind === 'ordered-list'
+            ? '1. '
+            : block.kind === 'blockquote'
+              ? '> '
+              : '';
+    const previousBlock = blocks[index - 1];
+    const separator =
+      index === 0
+        ? ''
+        : previousBlock && isList(previousBlock) && previousBlock.kind === block.kind
+          ? '\n'
+          : '\n\n';
+    return `${markdown}${separator}${prefix}${escapeProviderMarkdown(translations[index]!)}`;
+  }, '');
 
 export function usePDFTranslation(
   bookKey: string,
@@ -85,9 +117,9 @@ export function usePDFTranslation(
       }
 
       setPages(
-        sources.map(({ index, paragraphs }) => ({
+        sources.map(({ index, blocks }) => ({
           index,
-          sourceParagraphs: paragraphs,
+          sourceBlocks: blocks,
           sourceLanguage: 'AUTO',
           status: 'detecting',
         })),
@@ -97,7 +129,7 @@ export function usePDFTranslation(
         metadataLanguage,
         targetLanguage,
         sample: sources
-          .flatMap((source) => source.paragraphs)
+          .flatMap((source) => source.blocks.map((block) => block.text))
           .join('\n')
           .slice(0, 500),
       });
@@ -114,39 +146,42 @@ export function usePDFTranslation(
       }
 
       setPages(
-        sources.map(({ index, paragraphs }) => ({
+        sources.map(({ index, blocks }) => ({
           index,
-          sourceParagraphs: paragraphs,
+          sourceBlocks: blocks,
           sourceLanguage: resolved.language,
           status: 'translating',
         })),
       );
 
       const settled = await Promise.allSettled(
-        sources.map(({ paragraphs }) =>
-          translate(paragraphs, { source: resolved.language, target: targetLanguage }),
+        sources.map(({ blocks }) =>
+          translate(
+            blocks.map((block) => block.text),
+            { source: resolved.language, target: targetLanguage },
+          ),
         ),
       );
       if (!isCurrent()) return;
 
       setPages(
-        sources.map(({ index, paragraphs }, resultIndex): PDFPageTranslation => {
+        sources.map(({ index, blocks }, resultIndex): PDFPageTranslation => {
           const result = settled[resultIndex]!;
           if (result.status === 'rejected') {
             return {
               index,
-              sourceParagraphs: paragraphs,
+              sourceBlocks: blocks,
               sourceLanguage: resolved.language,
               status: 'error',
               error: errorMessage(result.reason),
             };
           }
 
-          const translatedParagraphs = alignedParagraphs(paragraphs, result.value);
-          if (!translatedParagraphs) {
+          const translations = alignedTranslations(blocks, result.value);
+          if (!translations) {
             return {
               index,
-              sourceParagraphs: paragraphs,
+              sourceBlocks: blocks,
               sourceLanguage: resolved.language,
               status: 'error',
               error: 'Translation did not return one result for each paragraph.',
@@ -155,10 +190,10 @@ export function usePDFTranslation(
 
           return {
             index,
-            sourceParagraphs: paragraphs,
+            sourceBlocks: blocks,
             sourceLanguage: resolved.language,
             status: 'translated',
-            translatedParagraphs,
+            translatedMarkdown: formatPDFMarkdown(blocks, translations),
           };
         }),
       );
@@ -200,23 +235,27 @@ export function usePDFTranslation(
         ),
       );
 
-      void translate(page.sourceParagraphs, {
-        source: page.sourceLanguage,
-        target: targetLanguage,
-      })
+      void translate(
+        page.sourceBlocks.map((block) => block.text),
+        {
+          source: page.sourceLanguage,
+          target: targetLanguage,
+        },
+      )
         .then((translated) => {
           if (generationRef.current !== generation) return;
           setPages((current) =>
             current.map((candidate) => {
-              if (
-                candidate.index !== index ||
-                candidate.sourceParagraphs !== page.sourceParagraphs
-              ) {
+              if (candidate.index !== index || candidate.sourceBlocks !== page.sourceBlocks) {
                 return candidate;
               }
-              const translatedParagraphs = alignedParagraphs(page.sourceParagraphs, translated);
-              return translatedParagraphs
-                ? { ...candidate, status: 'translated', translatedParagraphs }
+              const translations = alignedTranslations(page.sourceBlocks, translated);
+              return translations
+                ? {
+                    ...candidate,
+                    status: 'translated',
+                    translatedMarkdown: formatPDFMarkdown(page.sourceBlocks, translations),
+                  }
                 : {
                     ...candidate,
                     status: 'error',
@@ -229,7 +268,7 @@ export function usePDFTranslation(
           if (generationRef.current !== generation) return;
           setPages((current) =>
             current.map((candidate) =>
-              candidate.index === index && candidate.sourceParagraphs === page.sourceParagraphs
+              candidate.index === index && candidate.sourceBlocks === page.sourceBlocks
                 ? { ...candidate, status: 'error', error: errorMessage(error) }
                 : candidate,
             ),
