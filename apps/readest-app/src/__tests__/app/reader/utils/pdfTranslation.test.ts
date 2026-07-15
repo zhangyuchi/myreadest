@@ -49,7 +49,7 @@ const makePage = (
 };
 
 describe('getVisiblePDFPageSources', () => {
-  it('extracts visible body paragraphs in renderer order and ignores offscreen pages', () => {
+  it('extracts typed source blocks from visible PDF body text', () => {
     const renderer = document.createElement('div');
     renderer.getBoundingClientRect = () => rect(0, 800);
     const contents = [
@@ -57,9 +57,11 @@ describe('getVisiblePDFPageSources', () => {
         0,
         [
           { text: 'Document header', top: 35, bottom: 45 },
-          { text: 'First body line.', top: 190, bottom: 200 },
-          { text: 'It continues.', top: 204, bottom: 214 },
-          { text: 'Second paragraph.', top: 270, bottom: 280 },
+          { text: 'Title', top: 150, bottom: 190 },
+          { text: 'Body paragraph.', top: 220, bottom: 230 },
+          { text: '• Bullet item', top: 250, bottom: 260 },
+          { text: '2) Numbered item', top: 280, bottom: 290 },
+          { text: 'Quoted text', top: 310, bottom: 320, left: 120, right: 220 },
           { text: 'Page footer', top: 965, bottom: 975 },
         ],
         0,
@@ -82,7 +84,61 @@ describe('getVisiblePDFPageSources', () => {
     expect(getVisiblePDFPageSources(view)).toEqual([
       {
         index: 0,
-        paragraphs: ['First body line. It continues.', 'Second paragraph.'],
+        blocks: [
+          { kind: 'heading', headingLevel: 1, text: 'Title' },
+          { kind: 'paragraph', text: 'Body paragraph.' },
+          { kind: 'unordered-list', text: 'Bullet item' },
+          { kind: 'ordered-list', text: 'Numbered item' },
+          { kind: 'blockquote', text: 'Quoted text' },
+        ],
+      },
+    ]);
+  });
+
+  it('omits a visible page containing only edge-band text', () => {
+    const renderer = document.createElement('div');
+    renderer.getBoundingClientRect = () => rect(0, 800);
+    const page = makePage(
+      0,
+      [
+        { text: 'Document header', top: 35, bottom: 45 },
+        { text: 'Page footer', top: 965, bottom: 975 },
+      ],
+      0,
+      800,
+    );
+    const view = {
+      renderer: Object.assign(renderer, { getContents: () => [page] }),
+    } as unknown as FoliateView;
+
+    expect(getVisiblePDFPageSources(view)).toEqual([]);
+  });
+
+  it('joins same-baseline spans according to their geometry', () => {
+    const renderer = document.createElement('div');
+    renderer.getBoundingClientRect = () => rect(0, 800);
+    const page = makePage(
+      0,
+      [
+        { text: 'Hello', top: 190, bottom: 200, left: 0, right: 40 },
+        { text: 'world', top: 190, bottom: 200, left: 43, right: 83 },
+        { text: 'hyphen', top: 230, bottom: 240, left: 0, right: 50 },
+        { text: 'ated', top: 230, bottom: 240, left: 50, right: 80 },
+      ],
+      0,
+      800,
+    );
+    const view = {
+      renderer: Object.assign(renderer, { getContents: () => [page] }),
+    } as unknown as FoliateView;
+
+    expect(getVisiblePDFPageSources(view)).toEqual([
+      {
+        index: 0,
+        blocks: [
+          { kind: 'paragraph', text: 'Hello world' },
+          { kind: 'paragraph', text: 'hyphenated' },
+        ],
       },
     ]);
   });

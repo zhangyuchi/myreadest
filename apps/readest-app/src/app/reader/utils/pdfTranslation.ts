@@ -2,7 +2,13 @@ import type { FoliateView } from '@/types/view';
 
 export interface PDFPageSource {
   index: number;
-  paragraphs: string[];
+  blocks: PDFSourceBlock[];
+}
+
+export interface PDFSourceBlock {
+  kind: 'heading' | 'unordered-list' | 'ordered-list' | 'blockquote' | 'paragraph';
+  text: string;
+  headingLevel?: 1 | 2 | 3;
 }
 
 type PositionedText = { text: string; rect: DOMRect };
@@ -21,7 +27,19 @@ const intersects = (page: DOMRect, viewport: DOMRect) =>
   page.right > viewport.left &&
   page.left < viewport.right;
 
-function getBodyParagraphs(textLayer: Element): string[] {
+const median = (values: number[]) =>
+  [...values].sort((left, right) => left - right).at(Math.floor(values.length / 2));
+
+const textForLine = (line: TextLine) =>
+  line.spans.reduce((joined, span, spanIndex) => {
+    if (spanIndex === 0) return span.text;
+    const previousSpan = line.spans[spanIndex - 1]!;
+    const gap = span.rect.left - previousSpan.rect.right;
+    const wordGap = Math.min(span.rect.height, previousSpan.rect.height) * 0.2;
+    return `${joined}${gap > wordGap ? ' ' : ''}${span.text}`;
+  }, '');
+
+function getBodyBlocks(textLayer: Element): PDFSourceBlock[] {
   const layerRect = textLayer.getBoundingClientRect();
   const height = layerRect.height;
   const spans = [...textLayer.querySelectorAll('span:not([role="img"])')]
@@ -57,30 +75,47 @@ function getBodyParagraphs(textLayer: Element): string[] {
     lines.push({ spans: [span], top: span.rect.top, bottom: span.rect.bottom });
   }
 
-  const medianLineHeight = [...lines]
-    .map((line) => line.bottom - line.top)
-    .sort((left, right) => left - right)
-    .at(Math.floor(lines.length / 2));
-  const paragraphLines: string[][] = [];
+  const medianLineHeight = median(lines.map((line) => line.bottom - line.top)) ?? 0;
+  const medianLineLeft = median(lines.map((line) => line.spans[0]!.rect.left)) ?? 0;
+  const blocks: PDFSourceBlock[] = [];
 
   for (const [index, line] of lines.entries()) {
-    const text = line.spans.reduce((joined, span, spanIndex) => {
-      if (spanIndex === 0) return span.text;
-      const previousSpan = line.spans[spanIndex - 1]!;
-      const gap = span.rect.left - previousSpan.rect.right;
-      const wordGap = Math.min(span.rect.height, previousSpan.rect.height) * 0.2;
-      return `${joined}${gap > wordGap ? ' ' : ''}${span.text}`;
-    }, '');
+    const text = textForLine(line);
+    const lineHeight = line.bottom - line.top;
+    const headingLevel =
+      lineHeight >= medianLineHeight * 2
+        ? 1
+        : lineHeight >= medianLineHeight * 1.6
+          ? 2
+          : lineHeight >= medianLineHeight * 1.3
+            ? 3
+            : null;
+    const unorderedList = text.match(/^[•◦▪*-]\s+/u);
+    const orderedList = text.match(/^\d+[.)]\s+/u);
+    const block: PDFSourceBlock = unorderedList
+      ? { kind: 'unordered-list', text: text.slice(unorderedList[0].length) }
+      : orderedList
+        ? { kind: 'ordered-list', text: text.slice(orderedList[0].length) }
+        : headingLevel
+          ? { kind: 'heading', headingLevel, text }
+          : line.spans[0]!.rect.left - medianLineLeft > medianLineHeight
+            ? { kind: 'blockquote', text }
+            : { kind: 'paragraph', text };
     const previousLine = lines[index - 1];
     const lineGap = previousLine ? line.top - previousLine.bottom : 0;
-    if (!previousLine || lineGap > (medianLineHeight ?? 0) / 2) {
-      paragraphLines.push([text]);
+    const previousBlock = blocks.at(-1);
+    if (
+      block.kind === 'paragraph' &&
+      previousBlock?.kind === 'paragraph' &&
+      lineGap <= medianLineHeight / 2
+    ) {
+      previousBlock.text = `${previousBlock.text} ${block.text}`;
     } else {
-      paragraphLines.at(-1)!.push(text);
+      blocks.push(block);
     }
   }
 
-  return paragraphLines.map((lines) => lines.join(' ')).filter(Boolean);
+  return blocks;
 }
 
 export function getVisiblePDFPageSources(view: FoliateView): PDFPageSource[] {
@@ -94,7 +129,7 @@ export function getVisiblePDFPageSources(view: FoliateView): PDFPageSource[] {
     })
     .map(({ doc, index }) => {
       const textLayer = doc.querySelector('.textLayer');
-      return { index, paragraphs: textLayer ? getBodyParagraphs(textLayer) : [] };
+      return { index, blocks: textLayer ? getBodyBlocks(textLayer) : [] };
     })
-    .filter(({ paragraphs }) => paragraphs.length > 0);
+    .filter(({ blocks }) => blocks.length > 0);
 }
