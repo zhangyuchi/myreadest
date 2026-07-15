@@ -34,18 +34,15 @@ claimed here.
     src/__tests__/app/reader/FoliateViewerPDFTranslationLayout.test.tsx
   ```
 
-  It passed: 9 test files and 53 tests. This includes the focused pending-state accessibility
-  assertion added during final verification.
+  It passed: 9 test files and 56 tests. This includes lifecycle regressions proving pending PDF
+  work cannot publish after unmount, reactive provider replacement, or reactive target-language
+  replacement.
 
-- `pnpm --dir apps/readest-app lint` exited 2 with these exact `TS2352` diagnostics:
-
-  ```text
-  src/__tests__/app/reader/utils/pdfTranslation.test.ts(44,18): error TS2352: Conversion of type '{ renderer: HTMLDivElement & { getContents: () => { doc: Document; index: number; }[]; }; }' to type 'FoliateView' may be a mistake because neither type sufficiently overlaps with the other.
-  src/__tests__/app/reader/utils/pdfTranslation.test.ts(58,18): error TS2352: Conversion of type '{ renderer: HTMLDivElement & { getContents: () => { doc: Document; index: number; }[]; }; }' to type 'FoliateView' may be a mistake because neither type sufficiently overlaps with the other.
-  ```
-
-  `git diff --exit-code 84bd1325 -- apps/readest-app/src/__tests__/app/reader/utils/pdfTranslation.test.ts`
-  exited 0, proving the Task 7 commit did not modify those cast lines.
+- `pnpm --dir apps/readest-app lint` passed after the two partial `FoliateView` fixtures were
+  intentionally cast through `unknown`; no type checking was suppressed.
+- The EPUB-only `useTextTranslation` regression also passes when metadata is missing or `und` and
+  the LLM detector is unavailable. PDF language detection remains exclusively in
+  `resolvePDFSourceLanguage`.
 - `pnpm --dir apps/readest-app format:check` passed (`Checked 1754 files in 3s. No fixes
   applied.`), and `git diff --check` passed.
 - `git diff origin/main...HEAD -- apps/readest-app/src/services/translators

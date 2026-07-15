@@ -5,6 +5,7 @@ import { usePDFTranslation } from '@/app/reader/hooks/usePDFTranslation';
 
 const mocks = vi.hoisted(() => ({
   translate: vi.fn(),
+  useTranslator: vi.fn(),
   resolveLanguage: vi.fn(),
   getSources: vi.fn(),
   progress: { index: 0 },
@@ -33,7 +34,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@/hooks/useTranslator', () => ({
-  useTranslator: () => ({ translate: mocks.translate }),
+  useTranslator: mocks.useTranslator,
 }));
 vi.mock('@/services/translators/pdfLanguage', () => ({
   resolvePDFSourceLanguage: mocks.resolveLanguage,
@@ -73,6 +74,7 @@ const makeView = () => document.createElement('div') as unknown as FoliateView;
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.useTranslator.mockReturnValue({ translate: mocks.translate });
   mocks.progress.index = 0;
   mocks.settings.translationEnabled = true;
   mocks.settings.translationProvider = 'google';
@@ -358,6 +360,103 @@ describe('usePDFTranslation', () => {
     await act(async () => resolveTranslation(['迟到结果']));
 
     expect(result.current.pages).toEqual([]);
+  });
+
+  it('does not publish a pending translation after unmount', async () => {
+    let resolveTranslation!: (texts: string[]) => void;
+    mocks.getSources.mockReturnValue([{ index: 0, text: 'Pending unmount' }]);
+    mocks.resolveLanguage.mockResolvedValue({
+      language: 'en',
+      provenance: 'metadata',
+      skipTranslation: false,
+    });
+    mocks.translate.mockReturnValue(
+      new Promise<string[]>((resolve) => (resolveTranslation = resolve)),
+    );
+
+    const view = makeView();
+    const { result, unmount } = renderHook(() => usePDFTranslation('book-1', view));
+    await waitFor(() => expect(result.current.pages[0]?.status).toBe('translating'));
+    const pagesBeforeUnmount = result.current.pages;
+
+    unmount();
+    await act(async () => resolveTranslation(['Late unmount result']));
+
+    expect(result.current.pages).toEqual(pagesBeforeUnmount);
+  });
+
+  it('replaces a pending translation through the reactive provider subscription', async () => {
+    let resolveGoogle!: (texts: string[]) => void;
+    const googleTranslate = vi.fn(
+      () => new Promise<string[]>((resolve) => (resolveGoogle = resolve)),
+    );
+    const deeplTranslate = vi.fn().mockResolvedValue(['DeepL replacement']);
+    mocks.useTranslator.mockImplementation(({ provider }: { provider?: string }) => ({
+      translate: provider === 'deepl' ? deeplTranslate : googleTranslate,
+    }));
+    mocks.getSources.mockReturnValue([{ index: 0, text: 'Provider source' }]);
+    mocks.resolveLanguage.mockResolvedValue({
+      language: 'en',
+      provenance: 'metadata',
+      skipTranslation: false,
+    });
+
+    const view = makeView();
+    const { result } = renderHook(() => usePDFTranslation('book-1', view));
+    await waitFor(() => expect(googleTranslate).toHaveBeenCalledTimes(1));
+
+    act(() => mocks.reader.setSettings({ ...mocks.settings, translationProvider: 'deepl' }));
+    await waitFor(() =>
+      expect(deeplTranslate).toHaveBeenCalledWith(['Provider source'], {
+        source: 'en',
+        target: 'zh-CN',
+      }),
+    );
+    await waitFor(() => expect(result.current.pages[0]?.translatedText).toBe('DeepL replacement'));
+    await act(async () => resolveGoogle(['Late Google result']));
+
+    expect(result.current.pages).toEqual([
+      expect.objectContaining({
+        sourceText: 'Provider source',
+        translatedText: 'DeepL replacement',
+      }),
+    ]);
+  });
+
+  it('replaces a pending translation through the reactive target-language subscription', async () => {
+    let resolveFirst!: (texts: string[]) => void;
+    mocks.getSources.mockReturnValue([{ index: 0, text: 'Target source' }]);
+    mocks.resolveLanguage.mockResolvedValue({
+      language: 'en',
+      provenance: 'metadata',
+      skipTranslation: false,
+    });
+    mocks.translate
+      .mockReturnValueOnce(new Promise<string[]>((resolve) => (resolveFirst = resolve)))
+      .mockResolvedValueOnce(['Traduction de remplacement']);
+
+    const view = makeView();
+    const { result } = renderHook(() => usePDFTranslation('book-1', view));
+    await waitFor(() => expect(mocks.translate).toHaveBeenCalledTimes(1));
+
+    act(() => mocks.reader.setSettings({ ...mocks.settings, translateTargetLang: 'fr' }));
+    await waitFor(() =>
+      expect(mocks.translate).toHaveBeenLastCalledWith(['Target source'], {
+        source: 'en',
+        target: 'fr',
+      }),
+    );
+    await waitFor(() =>
+      expect(result.current.pages[0]?.translatedText).toBe('Traduction de remplacement'),
+    );
+    await act(async () => resolveFirst(['Late zh-CN result']));
+
+    expect(result.current.pages).toEqual([
+      expect.objectContaining({
+        sourceText: 'Target source',
+        translatedText: 'Traduction de remplacement',
+      }),
+    ]);
   });
 
   it('shows the scanned-PDF toast after a rendered empty text layer', async () => {

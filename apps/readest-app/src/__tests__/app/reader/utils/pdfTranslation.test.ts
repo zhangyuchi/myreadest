@@ -43,7 +43,7 @@ describe('getVisiblePDFPageSources', () => {
     ];
     const view = {
       renderer: Object.assign(renderer, { getContents: () => contents }),
-    } as FoliateView;
+    } as unknown as FoliateView;
 
     expect(getVisiblePDFPageSources(view)).toEqual([
       { index: 2, text: 'Second page' },
@@ -57,7 +57,7 @@ describe('getVisiblePDFPageSources', () => {
     const page = makePage(0, 'Source text', 0, 800);
     const view = {
       renderer: Object.assign(renderer, { getContents: () => [page] }),
-    } as FoliateView;
+    } as unknown as FoliateView;
 
     getVisiblePDFPageSources(view);
 
