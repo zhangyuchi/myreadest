@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { useTranslation } from '@/hooks/useTranslation';
 import type { PDFPageTranslation } from '../hooks/usePDFTranslation';
 
@@ -11,7 +13,12 @@ const PDFTranslationPane = ({ pages, onRetry }: PDFTranslationPaneProps) => {
   const _ = useTranslation();
   const paneRef = useRef<HTMLElement>(null);
   const visiblePageKey = useMemo(
-    () => pages.map((page) => `${page.index}:${page.sourceParagraphs.join('\u001f')}`).join('|'),
+    () =>
+      pages
+        .map(
+          (page) => `${page.index}:${page.sourceBlocks.map((block) => block.text).join('\u001f')}`,
+        )
+        .join('|'),
     [pages],
   );
 
@@ -27,7 +34,7 @@ const PDFTranslationPane = ({ pages, onRetry }: PDFTranslationPaneProps) => {
     >
       {pages.map((page) => (
         <article
-          key={`${page.index}:${page.sourceParagraphs.join('\u001f')}`}
+          key={`${page.index}:${page.sourceBlocks.map((block) => block.text).join('\u001f')}`}
           className='mb-6 last:mb-0'
         >
           <h2 className='mb-2 text-sm font-semibold opacity-70'>
@@ -39,15 +46,40 @@ const PDFTranslationPane = ({ pages, onRetry }: PDFTranslationPaneProps) => {
               <span className='sr-only'>{_('Translating...')}</span>
             </div>
           )}
-          {page.status === 'translated' &&
-            page.translatedParagraphs?.map((paragraph, paragraphIndex) => (
-              <p
-                key={`${page.index}:${paragraphIndex}`}
-                className='mb-4 last:mb-0 text-base leading-relaxed'
-              >
-                {paragraph}
-              </p>
-            ))}
+          {page.status === 'translated' && (
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                h1: ({ children }) => (
+                  <h1 className='mb-3 text-xl font-semibold leading-snug'>{children}</h1>
+                ),
+                h2: ({ children }) => (
+                  <h2 className='mb-3 text-lg font-semibold leading-snug'>{children}</h2>
+                ),
+                h3: ({ children }) => (
+                  <h3 className='mb-3 text-base font-semibold leading-snug'>{children}</h3>
+                ),
+                p: ({ children }) => <p className='mb-4 text-base leading-relaxed'>{children}</p>,
+                ul: ({ children }) => (
+                  <ul className='mb-4 list-disc space-y-1 pl-5 text-base leading-relaxed'>
+                    {children}
+                  </ul>
+                ),
+                ol: ({ children }) => (
+                  <ol className='mb-4 list-decimal space-y-1 pl-5 text-base leading-relaxed'>
+                    {children}
+                  </ol>
+                ),
+                blockquote: ({ children }) => (
+                  <blockquote className='mb-4 border-l-2 border-base-300 pl-3 text-base leading-relaxed opacity-80'>
+                    {children}
+                  </blockquote>
+                ),
+              }}
+            >
+              {page.translatedMarkdown}
+            </ReactMarkdown>
+          )}
           {page.status === 'error' && (
             <div role='alert' className='rounded border border-error p-3'>
               <p>{page.error || _('Translation failed')}</p>
