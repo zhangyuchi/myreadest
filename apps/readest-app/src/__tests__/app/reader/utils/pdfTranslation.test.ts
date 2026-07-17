@@ -222,6 +222,76 @@ describe('getVisiblePDFPageSources', () => {
     ]);
   });
 
+  it('separates a consistently indented quote from following body text', () => {
+    const renderer = document.createElement('div');
+    renderer.getBoundingClientRect = () => rect(0, 800);
+    const page = makePage(
+      0,
+      [
+        { text: 'The body paragraph has', top: 150, bottom: 160 },
+        { text: 'three visual lines before', top: 162, bottom: 172 },
+        { text: 'the quotation.', top: 174, bottom: 184 },
+        { text: 'The first quoted visual line', top: 186, bottom: 196, left: 90 },
+        { text: 'continues the quotation.', top: 198, bottom: 208, left: 90 },
+        { text: 'The body text resumes here.', top: 210, bottom: 220 },
+      ],
+      0,
+      800,
+    );
+    const view = {
+      renderer: Object.assign(renderer, { getContents: () => [page] }),
+    } as unknown as FoliateView;
+
+    expect(getVisiblePDFPageSources(view)).toEqual([
+      {
+        index: 0,
+        blocks: [
+          {
+            kind: 'paragraph',
+            text: 'The body paragraph has three visual lines before the quotation.',
+          },
+          {
+            kind: 'blockquote',
+            text: 'The first quoted visual line continues the quotation.',
+          },
+          { kind: 'paragraph', text: 'The body text resumes here.' },
+        ],
+      },
+    ]);
+  });
+
+  it('uses the body margin when first-line and body-left lines are balanced', () => {
+    const renderer = document.createElement('div');
+    renderer.getBoundingClientRect = () => rect(0, 800);
+    const page = makePage(
+      0,
+      [
+        { text: 'The first paragraph begins', top: 150, bottom: 160, left: 24 },
+        { text: 'and ends on its second line.', top: 162, bottom: 172 },
+        { text: 'The second paragraph begins', top: 174, bottom: 184, left: 24 },
+        { text: 'and ends on its second line.', top: 186, bottom: 196 },
+        { text: 'The third paragraph begins', top: 198, bottom: 208, left: 24 },
+        { text: 'and ends on its second line.', top: 210, bottom: 220 },
+      ],
+      0,
+      800,
+    );
+    const view = {
+      renderer: Object.assign(renderer, { getContents: () => [page] }),
+    } as unknown as FoliateView;
+
+    expect(getVisiblePDFPageSources(view)).toEqual([
+      {
+        index: 0,
+        blocks: [
+          { kind: 'paragraph', text: 'The first paragraph begins and ends on its second line.' },
+          { kind: 'paragraph', text: 'The second paragraph begins and ends on its second line.' },
+          { kind: 'paragraph', text: 'The third paragraph begins and ends on its second line.' },
+        ],
+      },
+    ]);
+  });
+
   it('removes a soft-wrap hyphen before a lowercase continuation', () => {
     const renderer = document.createElement('div');
     renderer.getBoundingClientRect = () => rect(0, 800);

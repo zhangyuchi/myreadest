@@ -30,6 +30,9 @@ const intersects = (page: DOMRect, viewport: DOMRect) =>
 const median = (values: number[]) =>
   [...values].sort((left, right) => left - right).at(Math.floor(values.length / 2));
 
+const lowerMedian = (values: number[]) =>
+  [...values].sort((left, right) => left - right).at(Math.floor((values.length - 1) / 2));
+
 const textForLine = (line: TextLine) =>
   line.spans.reduce((joined, span, spanIndex) => {
     if (spanIndex === 0) return span.text;
@@ -81,10 +84,9 @@ function getBodyBlocks(textLayer: Element): PDFSourceBlock[] {
   }
 
   const medianLineHeight = median(lines.map((line) => line.bottom - line.top)) ?? 0;
-  const medianLineLeft = median(lines.map((line) => line.spans[0]!.rect.left)) ?? 0;
+  const bodyLeft = lowerMedian(lines.map((line) => line.spans[0]!.rect.left)) ?? 0;
   const blocks: PDFSourceBlock[] = [];
-  const isIndented = (line: TextLine) =>
-    line.spans[0]!.rect.left - medianLineLeft > medianLineHeight;
+  const isIndented = (line: TextLine) => line.spans[0]!.rect.left - bodyLeft > medianLineHeight;
   let proseLines: TextLine[] = [];
   const flushProse = () => {
     if (proseLines.length === 0) return;
@@ -126,9 +128,12 @@ function getBodyBlocks(textLayer: Element): PDFSourceBlock[] {
 
     const previousLine = proseLines.at(-1);
     const lineGap = previousLine ? line.top - previousLine.bottom : 0;
+    const quoteCandidate = proseLines.length > 1 && proseLines.every(isIndented);
     if (
       previousLine &&
-      (lineGap > medianLineHeight || (isIndented(line) && !isIndented(previousLine)))
+      (lineGap > medianLineHeight ||
+        (isIndented(line) && !isIndented(previousLine)) ||
+        (!isIndented(line) && quoteCandidate))
     ) {
       flushProse();
     }
