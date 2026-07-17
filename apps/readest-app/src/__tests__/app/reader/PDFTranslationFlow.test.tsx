@@ -126,7 +126,9 @@ const Harness = ({ view }: { view: FoliateView }) => {
   const { pages } = usePDFTranslation('book-1', view);
   return (
     <>
-      <output data-testid='published-markdown'>{pages[0]?.translatedMarkdown}</output>
+      <output data-testid='published-markdown'>
+        {pages[0]?.translatedBlocks?.map((block) => block.markdown).join('\n')}
+      </output>
     </>
   );
 };
@@ -143,7 +145,7 @@ describe('PDF translation flow', () => {
 
     await waitFor(() =>
       expect(screen.getByTestId('published-markdown').textContent).toBe(
-        '# 翻译标题\n\n正文译文\n\n- 列表译文\n1. 编号译文\n\n> 引文译文',
+        '# 翻译标题\n正文译文\n- 列表译文\n1. 编号译文\n> 引文译文',
       ),
     );
     expect(mocks.translate).toHaveBeenCalledTimes(1);

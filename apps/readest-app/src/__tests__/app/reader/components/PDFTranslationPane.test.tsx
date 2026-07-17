@@ -1,25 +1,40 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import PDFTranslationPane from '@/app/reader/components/PDFTranslationPane';
-import type { PDFPageTranslation } from '@/app/reader/hooks/usePDFTranslation';
+import type { PDFPageTranslation, PDFTranslatedBlock } from '@/app/reader/hooks/usePDFTranslation';
 
 vi.mock('@/hooks/useTranslation', () => ({ useTranslation: () => (text: string) => text }));
 
 afterEach(cleanup);
 
 describe('PDFTranslationPane', () => {
-  const translatedPage = (index: number, translatedMarkdown: string): PDFPageTranslation => ({
+  const translatedBlock = (
+    kind: PDFTranslatedBlock['sourceBlock']['kind'],
+    text: string,
+    markdown = text,
+  ): PDFTranslatedBlock => ({
+    sourceBlock: { kind, text },
+    markdown,
+  });
+
+  const translatedPage = (
+    index: number,
+    translatedBlocks: PDFTranslatedBlock[],
+  ): PDFPageTranslation => ({
     index,
-    sourceBlocks: [{ kind: 'paragraph', text: `Source ${index}` }],
+    sourceBlocks: translatedBlocks.map((block) => block.sourceBlock),
     sourceLanguage: 'en',
     status: 'translated',
-    translatedMarkdown,
+    translatedBlocks,
   });
 
   it('renders translated spread pages in order', () => {
     render(
       <PDFTranslationPane
-        pages={[translatedPage(4, '左页'), translatedPage(5, '右页')]}
+        pages={[
+          translatedPage(4, [translatedBlock('paragraph', 'Source 4', '左页')]),
+          translatedPage(5, [translatedBlock('paragraph', 'Source 5', '右页')]),
+        ]}
         onRetry={vi.fn()}
       />,
     );
@@ -31,10 +46,56 @@ describe('PDFTranslationPane', () => {
     expect(sections[1]?.textContent).toContain('右页');
   });
 
+  it('renders each paragraph translation in its own paragraph', () => {
+    render(
+      <PDFTranslationPane
+        pages={[
+          translatedPage(0, [
+            translatedBlock('paragraph', 'First source', 'First translation'),
+            translatedBlock('paragraph', 'Second source', 'Second translation'),
+          ]),
+        ]}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    const first = screen.getByText('First translation');
+    const second = screen.getByText('Second translation');
+    expect(first.tagName).toBe('P');
+    expect(second.tagName).toBe('P');
+    expect(screen.getByRole('article').querySelectorAll('p')).toHaveLength(2);
+  });
+
+  it('groups adjacent same-kind list translations without including following paragraphs', () => {
+    render(
+      <PDFTranslationPane
+        pages={[
+          translatedPage(0, [
+            translatedBlock('unordered-list', 'First source item', '- First item'),
+            translatedBlock('unordered-list', 'Second source item', '- Second item'),
+            translatedBlock('paragraph', 'Following source', 'Following paragraph'),
+          ]),
+        ]}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(screen.getAllByRole('list')).toHaveLength(1);
+    expect(screen.getAllByRole('listitem')).toHaveLength(2);
+    expect(screen.getByText('Following paragraph').closest('ul')).toBeNull();
+  });
+
   it('renders translated markdown blocks', () => {
     render(
       <PDFTranslationPane
-        pages={[translatedPage(0, '# 标题\n\n- 项目\n\n> 引文\n\n正文')]}
+        pages={[
+          translatedPage(0, [
+            translatedBlock('heading', 'Heading source', '# 标题'),
+            translatedBlock('unordered-list', 'Item source', '- 项目'),
+            translatedBlock('blockquote', 'Quote source', '> 引文'),
+            translatedBlock('paragraph', 'Body source', '正文'),
+          ]),
+        ]}
         onRetry={vi.fn()}
       />,
     );
@@ -48,7 +109,11 @@ describe('PDFTranslationPane', () => {
   it('does not render raw HTML from translated markdown', () => {
     render(
       <PDFTranslationPane
-        pages={[translatedPage(0, '<img src=x onerror=alert(1)>')]}
+        pages={[
+          translatedPage(0, [
+            translatedBlock('paragraph', 'Unsafe source', '<img src=x onerror=alert(1)>'),
+          ]),
+        ]}
         onRetry={vi.fn()}
       />,
     );
@@ -98,12 +163,20 @@ describe('PDFTranslationPane', () => {
 
   it('scrolls to the beginning when the visible page changes', () => {
     const { rerender } = render(
-      <PDFTranslationPane pages={[translatedPage(0, '第一页')]} onRetry={vi.fn()} />,
+      <PDFTranslationPane
+        pages={[translatedPage(0, [translatedBlock('paragraph', 'First page source', '第一页')])]}
+        onRetry={vi.fn()}
+      />,
     );
     const pane = screen.getByLabelText('PDF Translation');
     pane.scrollTop = 120;
 
-    rerender(<PDFTranslationPane pages={[translatedPage(1, '第二页')]} onRetry={vi.fn()} />);
+    rerender(
+      <PDFTranslationPane
+        pages={[translatedPage(1, [translatedBlock('paragraph', 'Second page source', '第二页')])]}
+        onRetry={vi.fn()}
+      />,
+    );
 
     expect(pane.scrollTop).toBe(0);
   });

@@ -2,12 +2,71 @@ import { useEffect, useMemo, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useTranslation } from '@/hooks/useTranslation';
-import type { PDFPageTranslation } from '../hooks/usePDFTranslation';
+import type { PDFPageTranslation, PDFTranslatedBlock } from '../hooks/usePDFTranslation';
 
 interface PDFTranslationPaneProps {
   pages: PDFPageTranslation[];
   onRetry: (index: number) => void;
 }
+
+const TranslationMarkdown = ({ markdown }: { markdown: string }) => (
+  <ReactMarkdown
+    remarkPlugins={[remarkGfm]}
+    components={{
+      h1: ({ children }) => <h1 className='mb-3 text-xl font-semibold leading-snug'>{children}</h1>,
+      h2: ({ children }) => <h2 className='mb-3 text-lg font-semibold leading-snug'>{children}</h2>,
+      h3: ({ children }) => (
+        <h3 className='mb-3 text-base font-semibold leading-snug'>{children}</h3>
+      ),
+      p: ({ children }) => <p className='mb-4 text-base leading-relaxed'>{children}</p>,
+      ul: ({ children }) => (
+        <ul className='mb-4 list-disc space-y-1 pl-5 text-base leading-relaxed'>{children}</ul>
+      ),
+      ol: ({ children }) => (
+        <ol className='mb-4 list-decimal space-y-1 pl-5 text-base leading-relaxed'>{children}</ol>
+      ),
+      blockquote: ({ children }) => (
+        <blockquote className='mb-4 border-l-2 border-base-300 pl-3 text-base leading-relaxed opacity-80'>
+          {children}
+        </blockquote>
+      ),
+    }}
+  >
+    {markdown}
+  </ReactMarkdown>
+);
+
+const isList = (block: PDFTranslatedBlock) =>
+  block.sourceBlock.kind === 'unordered-list' || block.sourceBlock.kind === 'ordered-list';
+
+const isSameListKind = (left: PDFTranslatedBlock, right: PDFTranslatedBlock) =>
+  isList(left) && left.sourceBlock.kind === right.sourceBlock.kind;
+
+const TranslationBlocks = ({ blocks }: { blocks: PDFTranslatedBlock[] }) => {
+  const renderedBlocks = [];
+
+  for (let index = 0; index < blocks.length; index += 1) {
+    const startIndex = index;
+    const block = blocks[index]!;
+    const groupedBlocks = [block];
+
+    while (true) {
+      const nextBlock = blocks[index + 1];
+      if (!nextBlock || !isSameListKind(block, nextBlock)) break;
+      index += 1;
+      groupedBlocks.push(blocks[index]!);
+    }
+
+    renderedBlocks.push(
+      <TranslationMarkdown
+        key={`${block.sourceBlock.text}:${startIndex}`}
+        markdown={groupedBlocks.map((groupedBlock) => groupedBlock.markdown).join('\n')}
+      />,
+    );
+  }
+
+  return renderedBlocks;
+};
 
 const PDFTranslationPane = ({ pages, onRetry }: PDFTranslationPaneProps) => {
   const _ = useTranslation();
@@ -47,38 +106,7 @@ const PDFTranslationPane = ({ pages, onRetry }: PDFTranslationPaneProps) => {
             </div>
           )}
           {page.status === 'translated' && (
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                h1: ({ children }) => (
-                  <h1 className='mb-3 text-xl font-semibold leading-snug'>{children}</h1>
-                ),
-                h2: ({ children }) => (
-                  <h2 className='mb-3 text-lg font-semibold leading-snug'>{children}</h2>
-                ),
-                h3: ({ children }) => (
-                  <h3 className='mb-3 text-base font-semibold leading-snug'>{children}</h3>
-                ),
-                p: ({ children }) => <p className='mb-4 text-base leading-relaxed'>{children}</p>,
-                ul: ({ children }) => (
-                  <ul className='mb-4 list-disc space-y-1 pl-5 text-base leading-relaxed'>
-                    {children}
-                  </ul>
-                ),
-                ol: ({ children }) => (
-                  <ol className='mb-4 list-decimal space-y-1 pl-5 text-base leading-relaxed'>
-                    {children}
-                  </ol>
-                ),
-                blockquote: ({ children }) => (
-                  <blockquote className='mb-4 border-l-2 border-base-300 pl-3 text-base leading-relaxed opacity-80'>
-                    {children}
-                  </blockquote>
-                ),
-              }}
-            >
-              {page.translatedMarkdown}
-            </ReactMarkdown>
+            <TranslationBlocks blocks={page.translatedBlocks ?? []} />
           )}
           {page.status === 'error' && (
             <div role='alert' className='rounded border border-error p-3'>
