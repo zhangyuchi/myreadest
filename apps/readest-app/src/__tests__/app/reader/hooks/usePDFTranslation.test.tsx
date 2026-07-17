@@ -1,7 +1,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { FoliateView } from '@/types/view';
-import { formatPDFMarkdown, usePDFTranslation } from '@/app/reader/hooks/usePDFTranslation';
+import {
+  formatPDFTranslationBlocks,
+  usePDFTranslation,
+} from '@/app/reader/hooks/usePDFTranslation';
 import type { PDFSourceBlock } from '@/app/reader/utils/pdfTranslation';
 
 const mocks = vi.hoisted(() => ({
@@ -89,7 +92,7 @@ beforeEach(() => {
 });
 
 describe('usePDFTranslation', () => {
-  it('translates block plain text and publishes deterministic Markdown with AUTO fallback', async () => {
+  it('translates block plain text and publishes source-aligned Markdown blocks with AUTO fallback', async () => {
     mocks.getSources.mockReturnValue([
       {
         index: 0,
@@ -116,7 +119,22 @@ describe('usePDFTranslation', () => {
       expect(result.current.pages[0]).toEqual(
         expect.objectContaining({
           status: 'translated',
-          translatedMarkdown: '# 翻译标题\n\n正文译文\n\n- 列表译文\n1. 编号译文\n\n> 引文译文',
+          translatedBlocks: [
+            {
+              sourceBlock: { kind: 'heading', headingLevel: 1, text: 'Source heading' },
+              markdown: '# 翻译标题',
+            },
+            { sourceBlock: { kind: 'paragraph', text: 'Source body' }, markdown: '正文译文' },
+            {
+              sourceBlock: { kind: 'unordered-list', text: 'Source bullet' },
+              markdown: '- 列表译文',
+            },
+            {
+              sourceBlock: { kind: 'ordered-list', text: 'Source ordered item' },
+              markdown: '1. 编号译文',
+            },
+            { sourceBlock: { kind: 'blockquote', text: 'Source quote' }, markdown: '> 引文译文' },
+          ],
         }),
       ),
     );
@@ -150,7 +168,7 @@ describe('usePDFTranslation', () => {
 
     await waitFor(() => expect(result.current.pages[0]?.status).toBe('error'));
     expect(result.current.pages[0]?.error).toBe('API offline');
-    expect(result.current.pages[0]?.translatedMarkdown).toBeUndefined();
+    expect(result.current.pages[0]?.translatedBlocks).toBeUndefined();
   });
 
   it('publishes an error when translation response does not align with source blocks', async () => {
@@ -173,7 +191,7 @@ describe('usePDFTranslation', () => {
         error: 'Translation did not return one result for each paragraph.',
       }),
     );
-    expect(result.current.pages[0]?.translatedMarkdown).toBeUndefined();
+    expect(result.current.pages[0]?.translatedBlocks).toBeUndefined();
   });
 
   it('publishes an error when a translated paragraph is blank after trimming', async () => {
@@ -196,7 +214,7 @@ describe('usePDFTranslation', () => {
         error: 'Translation did not return one result for each paragraph.',
       }),
     );
-    expect(result.current.pages[0]?.translatedMarkdown).toBeUndefined();
+    expect(result.current.pages[0]?.translatedBlocks).toBeUndefined();
   });
 
   it('keeps provider HTML-like and strikethrough-like text as escaped Markdown source text', async () => {
@@ -212,7 +230,7 @@ describe('usePDFTranslation', () => {
     const { result } = renderHook(() => usePDFTranslation('book-1', view));
 
     await waitFor(() => expect(result.current.pages[0]?.status).toBe('translated'));
-    expect(result.current.pages[0]?.translatedMarkdown).toBe(
+    expect(result.current.pages[0]?.translatedBlocks?.[0]?.markdown).toBe(
       '\\~\\~&lt;img src=x onerror=alert(1)&gt;\\~\\~',
     );
   });
@@ -232,19 +250,25 @@ describe('usePDFTranslation', () => {
     const { result } = renderHook(() => usePDFTranslation('book-1', view));
 
     await waitFor(() => expect(result.current.pages[0]?.status).toBe('translated'));
-    expect(result.current.pages[0]?.translatedMarkdown).toBe('# Title ==== Translated body');
+    expect(result.current.pages[0]?.translatedBlocks?.[0]?.markdown).toBe(
+      '# Title ==== Translated body',
+    );
   });
 
-  it('joins mixed adjacent list blocks with one newline', () => {
-    expect(
-      formatPDFMarkdown(
-        [
-          { kind: 'unordered-list', text: 'Source bullet' },
-          { kind: 'ordered-list', text: 'Source ordered item' },
-        ],
-        ['Bullet translation', 'Ordered translation'],
-      ),
-    ).toBe('- Bullet translation\n1. Ordered translation');
+  it('maps each translation to its original source block', () => {
+    const blocks = sourceBlocks('First source paragraph', 'Second source paragraph');
+
+    const translatedBlocks = formatPDFTranslationBlocks(blocks, [
+      'First translation',
+      'Second translation',
+    ]);
+
+    expect(translatedBlocks).toEqual([
+      { sourceBlock: blocks[0], markdown: 'First translation' },
+      { sourceBlock: blocks[1], markdown: 'Second translation' },
+    ]);
+    expect(translatedBlocks[0]?.sourceBlock).toBe(blocks[0]);
+    expect(translatedBlocks[1]?.sourceBlock).toBe(blocks[1]);
   });
 
   it('ignores a late result after the visible page changes', async () => {
@@ -270,7 +294,12 @@ describe('usePDFTranslation', () => {
     await waitFor(() => expect(result.current.pages[0]?.index).toBe(1));
     await act(async () => resolveFirst(['第一页']));
     expect(result.current.pages).toEqual([
-      expect.objectContaining({ index: 1, translatedMarkdown: '第二页' }),
+      expect.objectContaining({
+        index: 1,
+        translatedBlocks: [
+          { sourceBlock: { kind: 'paragraph', text: 'Second page' }, markdown: '第二页' },
+        ],
+      }),
     ]);
   });
 
@@ -326,7 +355,9 @@ describe('usePDFTranslation', () => {
 
     act(() => view.dispatchEvent(new CustomEvent('pdf-text-layer-rendered')));
 
-    await waitFor(() => expect(result.current.pages[0]?.translatedMarkdown).toBe('就绪'));
+    await waitFor(() =>
+      expect(result.current.pages[0]?.translatedBlocks?.[0]?.markdown).toBe('就绪'),
+    );
   });
 
   it('ignores a pending translation after a newer text-layer refresh', async () => {
@@ -348,11 +379,18 @@ describe('usePDFTranslation', () => {
     await waitFor(() => expect(mocks.translate).toHaveBeenCalledTimes(1));
 
     act(() => view.dispatchEvent(new CustomEvent('pdf-text-layer-rendered')));
-    await waitFor(() => expect(result.current.pages[0]?.translatedMarkdown).toBe('第二层'));
+    await waitFor(() =>
+      expect(result.current.pages[0]?.translatedBlocks?.[0]?.markdown).toBe('第二层'),
+    );
     await act(async () => resolveFirst(['第一层']));
 
     expect(result.current.pages).toEqual([
-      expect.objectContaining({ index: 1, translatedMarkdown: '第二层' }),
+      expect.objectContaining({
+        index: 1,
+        translatedBlocks: [
+          { sourceBlock: { kind: 'paragraph', text: 'Second layer' }, markdown: '第二层' },
+        ],
+      }),
     ]);
   });
 
@@ -376,11 +414,18 @@ describe('usePDFTranslation', () => {
     await waitFor(() => expect(mocks.translate).toHaveBeenCalledTimes(1));
 
     rerender({ view: makeView() });
-    await waitFor(() => expect(result.current.pages[0]?.translatedMarkdown).toBe('替换页'));
+    await waitFor(() =>
+      expect(result.current.pages[0]?.translatedBlocks?.[0]?.markdown).toBe('替换页'),
+    );
     await act(async () => resolveFirst(['旧视图']));
 
     expect(result.current.pages).toEqual([
-      expect.objectContaining({ index: 1, translatedMarkdown: '替换页' }),
+      expect.objectContaining({
+        index: 1,
+        translatedBlocks: [
+          { sourceBlock: { kind: 'paragraph', text: 'Replacement view' }, markdown: '替换页' },
+        ],
+      }),
     ]);
   });
 
@@ -413,7 +458,9 @@ describe('usePDFTranslation', () => {
 
     act(() => result.current.retryPage(0));
 
-    await waitFor(() => expect(result.current.pages[0]?.translatedMarkdown).toBe('重试成功'));
+    await waitFor(() =>
+      expect(result.current.pages[0]?.translatedBlocks?.[0]?.markdown).toBe('重试成功'),
+    );
   });
 
   it('ignores a pending retry after a newer refresh', async () => {
@@ -436,10 +483,12 @@ describe('usePDFTranslation', () => {
     act(() => result.current.retryPage(0));
     await waitFor(() => expect(mocks.translate).toHaveBeenCalledTimes(2));
     act(() => view.dispatchEvent(new CustomEvent('pdf-text-layer-rendered')));
-    await waitFor(() => expect(result.current.pages[0]?.translatedMarkdown).toBe('刷新结果'));
+    await waitFor(() =>
+      expect(result.current.pages[0]?.translatedBlocks?.[0]?.markdown).toBe('刷新结果'),
+    );
     await act(async () => resolveRetry(['过期重试']));
 
-    expect(result.current.pages[0]?.translatedMarkdown).toBe('刷新结果');
+    expect(result.current.pages[0]?.translatedBlocks?.[0]?.markdown).toBe('刷新结果');
   });
 
   it('does not retry translated or translating pages', async () => {
@@ -540,14 +589,19 @@ describe('usePDFTranslation', () => {
       }),
     );
     await waitFor(() =>
-      expect(result.current.pages[0]?.translatedMarkdown).toBe('DeepL replacement'),
+      expect(result.current.pages[0]?.translatedBlocks?.[0]?.markdown).toBe('DeepL replacement'),
     );
     await act(async () => resolveGoogle(['Late Google result']));
 
     expect(result.current.pages).toEqual([
       expect.objectContaining({
         sourceBlocks: sourceBlocks('Provider source'),
-        translatedMarkdown: 'DeepL replacement',
+        translatedBlocks: [
+          {
+            sourceBlock: { kind: 'paragraph', text: 'Provider source' },
+            markdown: 'DeepL replacement',
+          },
+        ],
       }),
     ]);
   });
@@ -576,14 +630,21 @@ describe('usePDFTranslation', () => {
       }),
     );
     await waitFor(() =>
-      expect(result.current.pages[0]?.translatedMarkdown).toBe('Traduction de remplacement'),
+      expect(result.current.pages[0]?.translatedBlocks?.[0]?.markdown).toBe(
+        'Traduction de remplacement',
+      ),
     );
     await act(async () => resolveFirst(['Late zh-CN result']));
 
     expect(result.current.pages).toEqual([
       expect.objectContaining({
         sourceBlocks: sourceBlocks('Target source'),
-        translatedMarkdown: 'Traduction de remplacement',
+        translatedBlocks: [
+          {
+            sourceBlock: { kind: 'paragraph', text: 'Target source' },
+            markdown: 'Traduction de remplacement',
+          },
+        ],
       }),
     ]);
   });

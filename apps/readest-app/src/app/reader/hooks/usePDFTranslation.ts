@@ -13,12 +13,17 @@ import { getVisiblePDFPageSources, type PDFSourceBlock } from '../utils/pdfTrans
 
 export type PDFTranslationStatus = 'detecting' | 'translating' | 'translated' | 'error';
 
+export interface PDFTranslatedBlock {
+  sourceBlock: PDFSourceBlock;
+  markdown: string;
+}
+
 export interface PDFPageTranslation {
   index: number;
   sourceBlocks: PDFSourceBlock[];
   sourceLanguage: string;
   status: PDFTranslationStatus;
-  translatedMarkdown?: string;
+  translatedBlocks?: PDFTranslatedBlock[];
   error?: string;
 }
 
@@ -44,26 +49,25 @@ const escapeProviderMarkdown = (text: string) =>
     .replace(/>/gu, '&gt;')
     .replace(/([\\`*_{}\[\]#+\-.!|~])/gu, '\\$1');
 
-const isList = (block: PDFSourceBlock) =>
-  block.kind === 'unordered-list' || block.kind === 'ordered-list';
+const markdownPrefix = (block: PDFSourceBlock) =>
+  block.kind === 'heading'
+    ? `${'#'.repeat(block.headingLevel ?? 1)} `
+    : block.kind === 'unordered-list'
+      ? '- '
+      : block.kind === 'ordered-list'
+        ? '1. '
+        : block.kind === 'blockquote'
+          ? '> '
+          : '';
 
-export const formatPDFMarkdown = (blocks: PDFSourceBlock[], translations: string[]) =>
-  blocks.reduce((markdown, block, index) => {
-    const prefix =
-      block.kind === 'heading'
-        ? `${'#'.repeat(block.headingLevel ?? 1)} `
-        : block.kind === 'unordered-list'
-          ? '- '
-          : block.kind === 'ordered-list'
-            ? '1. '
-            : block.kind === 'blockquote'
-              ? '> '
-              : '';
-    const previousBlock = blocks[index - 1];
-    const separator =
-      index === 0 ? '' : previousBlock && isList(previousBlock) && isList(block) ? '\n' : '\n\n';
-    return `${markdown}${separator}${prefix}${escapeProviderMarkdown(translations[index]!)}`;
-  }, '');
+export const formatPDFTranslationBlocks = (
+  blocks: PDFSourceBlock[],
+  translations: string[],
+): PDFTranslatedBlock[] =>
+  blocks.map((sourceBlock, index) => ({
+    sourceBlock,
+    markdown: `${markdownPrefix(sourceBlock)}${escapeProviderMarkdown(translations[index]!)}`,
+  }));
 
 export function usePDFTranslation(
   bookKey: string,
@@ -190,7 +194,7 @@ export function usePDFTranslation(
             sourceBlocks: blocks,
             sourceLanguage: resolved.language,
             status: 'translated',
-            translatedMarkdown: formatPDFMarkdown(blocks, translations),
+            translatedBlocks: formatPDFTranslationBlocks(blocks, translations),
           };
         }),
       );
@@ -251,7 +255,7 @@ export function usePDFTranslation(
                 ? {
                     ...candidate,
                     status: 'translated',
-                    translatedMarkdown: formatPDFMarkdown(page.sourceBlocks, translations),
+                    translatedBlocks: formatPDFTranslationBlocks(page.sourceBlocks, translations),
                   }
                 : {
                     ...candidate,
