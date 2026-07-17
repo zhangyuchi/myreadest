@@ -127,6 +127,7 @@ function getBodyBlocks(textLayer: Element): PDFSourceBlock[] {
     );
     if (matchingLines.size >= 2) recurringSplitStarts.push(split.left);
   }
+  recurringSplitStarts.sort((left, right) => left - right);
   const hasRecurringRegions = recurringSplitStarts.length > 0;
   const fragmentsByRegion = hasRecurringRegions
     ? lineFragments.map((fragments) => {

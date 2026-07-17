@@ -282,6 +282,49 @@ describe('getVisiblePDFPageSources', () => {
     ]);
   });
 
+  it('keeps irregular recurring three-column regions in left-to-right order', () => {
+    const renderer = document.createElement('div');
+    renderer.getBoundingClientRect = () => rect(0, 800);
+    const page = makePage(
+      0,
+      [
+        { text: 'Left upper line.', top: 150, bottom: 160, left: 0, right: 100 },
+        { text: 'Right upper line.', top: 150, bottom: 160, left: 500, right: 590 },
+        { text: 'Left middle line.', top: 162, bottom: 172, left: 0, right: 110 },
+        { text: 'Middle middle line.', top: 162, bottom: 172, left: 300, right: 410 },
+        { text: 'Right middle line.', top: 162, bottom: 172, left: 500, right: 590 },
+        { text: 'Left lower line.', top: 174, bottom: 184, left: 0, right: 100 },
+        { text: 'Middle lower line.', top: 174, bottom: 184, left: 300, right: 400 },
+        { text: 'Right lower line.', top: 174, bottom: 184, left: 500, right: 590 },
+      ],
+      0,
+      800,
+    );
+    const view = {
+      renderer: Object.assign(renderer, { getContents: () => [page] }),
+    } as unknown as FoliateView;
+
+    expect(getVisiblePDFPageSources(view)).toEqual([
+      {
+        index: 0,
+        blocks: [
+          {
+            kind: 'paragraph',
+            text: 'Left upper line. Left middle line. Left lower line.',
+          },
+          {
+            kind: 'paragraph',
+            text: 'Middle middle line. Middle lower line.',
+          },
+          {
+            kind: 'paragraph',
+            text: 'Right upper line. Right middle line. Right lower line.',
+          },
+        ],
+      },
+    ]);
+  });
+
   it('keeps a one-off wide gap in one ordinary line', () => {
     const renderer = document.createElement('div');
     renderer.getBoundingClientRect = () => rect(0, 800);
