@@ -104,6 +104,7 @@ const makeView = () => {
     ['• Source bullet', 250, 260],
     ['2) Source ordered item', 280, 290],
     ['Source quote', 310, 320, 120],
+    ['continuation', 330, 340, 120],
     ['Page footer', 965, 975],
   ];
   for (const [text, top, bottom, left = 0] of positionedSpans) {
@@ -151,7 +152,13 @@ describe('PDF translation flow', () => {
     expect(mocks.translate).toHaveBeenCalledTimes(1);
     expect(mocks.translate).toHaveBeenNthCalledWith(
       1,
-      ['Source heading', 'Source body', 'Source bullet', 'Source ordered item', 'Source quote'],
+      [
+        'Source heading',
+        'Source body',
+        'Source bullet',
+        'Source ordered item',
+        'Source quote continuation',
+      ],
       {
         source: 'en',
         target: 'zh-CN',
