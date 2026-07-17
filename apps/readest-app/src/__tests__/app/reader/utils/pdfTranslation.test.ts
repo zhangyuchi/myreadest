@@ -89,7 +89,7 @@ describe('getVisiblePDFPageSources', () => {
           { kind: 'paragraph', text: 'Body paragraph.' },
           { kind: 'unordered-list', text: 'Bullet item' },
           { kind: 'ordered-list', text: 'Numbered item' },
-          { kind: 'blockquote', text: 'Quoted text' },
+          { kind: 'paragraph', text: 'Quoted text' },
         ],
       },
     ]);
@@ -218,6 +218,90 @@ describe('getVisiblePDFPageSources', () => {
             text: 'The first quoted visual line continues the same quotation.',
           },
         ],
+      },
+    ]);
+  });
+
+  it('keeps a body-left line ahead of a quote-majority region', () => {
+    const renderer = document.createElement('div');
+    renderer.getBoundingClientRect = () => rect(0, 800);
+    const page = makePage(
+      0,
+      [
+        { text: 'Body text establishes the prose margin.', top: 150, bottom: 160 },
+        { text: 'The first quoted visual line.', top: 162, bottom: 172, left: 90 },
+        { text: 'The second quoted visual line.', top: 174, bottom: 184, left: 90 },
+      ],
+      0,
+      800,
+    );
+    const view = {
+      renderer: Object.assign(renderer, { getContents: () => [page] }),
+    } as unknown as FoliateView;
+
+    expect(getVisiblePDFPageSources(view)).toEqual([
+      {
+        index: 0,
+        blocks: [
+          { kind: 'paragraph', text: 'Body text establishes the prose margin.' },
+          {
+            kind: 'blockquote',
+            text: 'The first quoted visual line. The second quoted visual line.',
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('reads recurring wide-gap regions column by column', () => {
+    const renderer = document.createElement('div');
+    renderer.getBoundingClientRect = () => rect(0, 800);
+    const page = makePage(
+      0,
+      [
+        { text: 'Left column first line.', top: 150, bottom: 160, left: 0, right: 120 },
+        { text: 'Right column first line.', top: 150, bottom: 160, left: 360, right: 500 },
+        { text: 'Left column second line.', top: 162, bottom: 172, left: 0, right: 130 },
+        { text: 'Right column second line.', top: 162, bottom: 172, left: 360, right: 510 },
+      ],
+      0,
+      800,
+    );
+    const view = {
+      renderer: Object.assign(renderer, { getContents: () => [page] }),
+    } as unknown as FoliateView;
+
+    expect(getVisiblePDFPageSources(view)).toEqual([
+      {
+        index: 0,
+        blocks: [
+          { kind: 'paragraph', text: 'Left column first line. Left column second line.' },
+          { kind: 'paragraph', text: 'Right column first line. Right column second line.' },
+        ],
+      },
+    ]);
+  });
+
+  it('keeps a one-off wide gap in one ordinary line', () => {
+    const renderer = document.createElement('div');
+    renderer.getBoundingClientRect = () => rect(0, 800);
+    const page = makePage(
+      0,
+      [
+        { text: 'An ordinary line', top: 150, bottom: 160, left: 0, right: 90 },
+        { text: 'with a distant span.', top: 150, bottom: 160, left: 360, right: 470 },
+      ],
+      0,
+      800,
+    );
+    const view = {
+      renderer: Object.assign(renderer, { getContents: () => [page] }),
+    } as unknown as FoliateView;
+
+    expect(getVisiblePDFPageSources(view)).toEqual([
+      {
+        index: 0,
+        blocks: [{ kind: 'paragraph', text: 'An ordinary line with a distant span.' }],
       },
     ]);
   });

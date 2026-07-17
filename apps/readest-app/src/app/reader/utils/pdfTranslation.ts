@@ -19,6 +19,11 @@ type TextLine = {
   bottom: number;
 };
 
+type TextRegion = {
+  left: number;
+  lines: TextLine[];
+};
+
 const PAGE_EDGE_RATIO = 0.08;
 
 const intersects = (page: DOMRect, viewport: DOMRect) =>
@@ -46,6 +51,12 @@ const joinParagraphLines = (previous: string, next: string) =>
   previous.endsWith('-') && /^\p{Ll}/u.test(next)
     ? `${previous.slice(0, -1)}${next}`
     : `${previous} ${next}`;
+
+const lineForSpans = (spans: PositionedText[]): TextLine => ({
+  spans,
+  top: Math.min(...spans.map((span) => span.rect.top)),
+  bottom: Math.max(...spans.map((span) => span.rect.bottom)),
+});
 
 function getBodyBlocks(textLayer: Element): PDFSourceBlock[] {
   const layerRect = textLayer.getBoundingClientRect();
@@ -80,10 +91,84 @@ function getBodyBlocks(textLayer: Element): PDFSourceBlock[] {
       }
     }
 
-    lines.push({ spans: [span], top: span.rect.top, bottom: span.rect.bottom });
+    lines.push(lineForSpans([span]));
   }
 
   const medianLineHeight = median(lines.map((line) => line.bottom - line.top)) ?? 0;
+  const medianSpanHeight = median(spans.map((span) => span.rect.height)) ?? 0;
+  const fragmentGap = Math.max(medianSpanHeight * 4, layerRect.width * 0.12);
+  const lineFragments = lines.map((line) => {
+    const fragments: TextLine[] = [];
+    let fragmentSpans: PositionedText[] = [];
+    for (const span of line.spans) {
+      const previousSpan = fragmentSpans.at(-1);
+      if (previousSpan && span.rect.left - previousSpan.rect.right > fragmentGap) {
+        fragments.push(lineForSpans(fragmentSpans));
+        fragmentSpans = [];
+      }
+      fragmentSpans.push(span);
+    }
+    fragments.push(lineForSpans(fragmentSpans));
+    return fragments;
+  });
+  const splitStartTolerance = Math.max(medianSpanHeight * 4, layerRect.width * 0.02);
+  const splitStarts = lineFragments.flatMap((fragments, lineIndex) =>
+    fragments.slice(1).map((fragment) => ({ lineIndex, left: fragment.spans[0]!.rect.left })),
+  );
+  const recurringSplitStarts: number[] = [];
+  for (const split of splitStarts) {
+    if (recurringSplitStarts.some((start) => Math.abs(start - split.left) <= splitStartTolerance)) {
+      continue;
+    }
+    const matchingLines = new Set(
+      splitStarts
+        .filter((candidate) => Math.abs(candidate.left - split.left) <= splitStartTolerance)
+        .map((candidate) => candidate.lineIndex),
+    );
+    if (matchingLines.size >= 2) recurringSplitStarts.push(split.left);
+  }
+  const hasRecurringRegions = recurringSplitStarts.length > 0;
+  const fragmentsByRegion = hasRecurringRegions
+    ? lineFragments.map((fragments) => {
+        const groupedFragments: TextLine[] = [fragments[0]!];
+        for (const fragment of fragments.slice(1)) {
+          if (
+            recurringSplitStarts.some(
+              (start) => Math.abs(start - fragment.spans[0]!.rect.left) <= splitStartTolerance,
+            )
+          ) {
+            groupedFragments.push(fragment);
+            continue;
+          }
+          const previousFragment = groupedFragments.pop()!;
+          groupedFragments.push(lineForSpans([...previousFragment.spans, ...fragment.spans]));
+        }
+        return groupedFragments;
+      })
+    : [lines];
+  const regions: TextRegion[] = hasRecurringRegions
+    ? [
+        {
+          left: Math.min(
+            ...fragmentsByRegion.flatMap((fragments) => fragments[0]!.spans[0]!.rect.left),
+          ),
+          lines: [],
+        },
+        ...recurringSplitStarts.map((left) => ({ left, lines: [] })),
+      ]
+    : [{ left: 0, lines }];
+  if (hasRecurringRegions) {
+    for (const fragments of fragmentsByRegion) {
+      for (const fragment of fragments) {
+        const region = regions
+          .filter(
+            (candidate) => candidate.left <= fragment.spans[0]!.rect.left + splitStartTolerance,
+          )
+          .at(-1)!;
+        region.lines.push(fragment);
+      }
+    }
+  }
   const structuralBlockForLine = (line: TextLine): PDFSourceBlock | null => {
     const text = textForLine(line);
     const lineHeight = line.bottom - line.top;
@@ -105,55 +190,57 @@ function getBodyBlocks(textLayer: Element): PDFSourceBlock[] {
           ? { kind: 'heading', headingLevel, text }
           : null;
   };
-  const bodyLeft =
-    lowerMedian(
-      lines
+  const blocks: PDFSourceBlock[] = [];
+  for (const region of regions.sort((left, right) => left.left - right.left)) {
+    region.lines.sort((left, right) => left.top - right.top);
+    const bodyLeft = Math.min(
+      ...region.lines
         .filter((line) => structuralBlockForLine(line) === null)
         .map((line) => line.spans[0]!.rect.left),
-    ) ?? 0;
-  const blocks: PDFSourceBlock[] = [];
-  const isIndented = (line: TextLine) => line.spans[0]!.rect.left - bodyLeft > medianLineHeight;
-  let proseLines: TextLine[] = [];
-  const flushProse = () => {
-    if (proseLines.length === 0) return;
-    const text = proseLines
-      .map(textForLine)
-      .reduce((joined, lineText) => joinParagraphLines(joined, lineText));
-    blocks.push({
-      kind: proseLines.every(isIndented) ? 'blockquote' : 'paragraph',
-      text,
-    });
-    proseLines = [];
-  };
+    );
+    const isIndented = (line: TextLine) => line.spans[0]!.rect.left - bodyLeft > medianLineHeight;
+    let proseLines: TextLine[] = [];
+    const flushProse = () => {
+      if (proseLines.length === 0) return;
+      const text = proseLines
+        .map(textForLine)
+        .reduce((joined, lineText) => joinParagraphLines(joined, lineText));
+      blocks.push({
+        kind: proseLines.length > 1 && proseLines.every(isIndented) ? 'blockquote' : 'paragraph',
+        text,
+      });
+      proseLines = [];
+    };
 
-  for (const line of lines) {
-    const structuralBlock = structuralBlockForLine(line);
-    if (structuralBlock) {
-      flushProse();
-      blocks.push(structuralBlock);
-      continue;
+    for (const line of region.lines) {
+      const structuralBlock = structuralBlockForLine(line);
+      if (structuralBlock) {
+        flushProse();
+        blocks.push(structuralBlock);
+        continue;
+      }
+
+      const previousLine = proseLines.at(-1);
+      const lineGap = previousLine ? line.top - previousLine.bottom : 0;
+      const quoteCandidate = proseLines.length > 1 && proseLines.every(isIndented);
+      const quoteLeft = quoteCandidate
+        ? (lowerMedian(proseLines.map((candidate) => candidate.spans[0]!.rect.left)) ?? null)
+        : null;
+      const outdentsQuote =
+        quoteLeft !== null && line.spans[0]!.rect.left < quoteLeft - medianLineHeight;
+      if (
+        previousLine &&
+        (lineGap > medianLineHeight ||
+          (isIndented(line) && !isIndented(previousLine)) ||
+          outdentsQuote)
+      ) {
+        flushProse();
+      }
+      proseLines.push(line);
     }
 
-    const previousLine = proseLines.at(-1);
-    const lineGap = previousLine ? line.top - previousLine.bottom : 0;
-    const quoteCandidate = proseLines.length > 1 && proseLines.every(isIndented);
-    const quoteLeft = quoteCandidate
-      ? (lowerMedian(proseLines.map((candidate) => candidate.spans[0]!.rect.left)) ?? null)
-      : null;
-    const outdentsQuote =
-      quoteLeft !== null && line.spans[0]!.rect.left < quoteLeft - medianLineHeight;
-    if (
-      previousLine &&
-      (lineGap > medianLineHeight ||
-        (isIndented(line) && !isIndented(previousLine)) ||
-        outdentsQuote)
-    ) {
-      flushProse();
-    }
-    proseLines.push(line);
+    flushProse();
   }
-
-  flushProse();
 
   return blocks;
 }
