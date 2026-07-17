@@ -39,6 +39,11 @@ const textForLine = (line: TextLine) =>
     return `${joined}${gap > wordGap ? ' ' : ''}${span.text}`;
   }, '');
 
+const joinParagraphLines = (previous: string, next: string) =>
+  previous.endsWith('-') && /^\p{Ll}/u.test(next)
+    ? `${previous.slice(0, -1)}${next}`
+    : `${previous} ${next}`;
+
 function getBodyBlocks(textLayer: Element): PDFSourceBlock[] {
   const layerRect = textLayer.getBoundingClientRect();
   const height = layerRect.height;
@@ -78,8 +83,22 @@ function getBodyBlocks(textLayer: Element): PDFSourceBlock[] {
   const medianLineHeight = median(lines.map((line) => line.bottom - line.top)) ?? 0;
   const medianLineLeft = median(lines.map((line) => line.spans[0]!.rect.left)) ?? 0;
   const blocks: PDFSourceBlock[] = [];
+  const isIndented = (line: TextLine) =>
+    line.spans[0]!.rect.left - medianLineLeft > medianLineHeight;
+  let proseLines: TextLine[] = [];
+  const flushProse = () => {
+    if (proseLines.length === 0) return;
+    const text = proseLines
+      .map(textForLine)
+      .reduce((joined, lineText) => joinParagraphLines(joined, lineText));
+    blocks.push({
+      kind: proseLines.every(isIndented) ? 'blockquote' : 'paragraph',
+      text,
+    });
+    proseLines = [];
+  };
 
-  for (const [index, line] of lines.entries()) {
+  for (const line of lines) {
     const text = textForLine(line);
     const lineHeight = line.bottom - line.top;
     const headingLevel =
@@ -92,28 +111,31 @@ function getBodyBlocks(textLayer: Element): PDFSourceBlock[] {
             : null;
     const unorderedList = text.match(/^[•◦▪*-]\s+/u);
     const orderedList = text.match(/^\d+[.)]\s+/u);
-    const block: PDFSourceBlock = unorderedList
+    const structuralBlock: PDFSourceBlock | null = unorderedList
       ? { kind: 'unordered-list', text: text.slice(unorderedList[0].length) }
       : orderedList
         ? { kind: 'ordered-list', text: text.slice(orderedList[0].length) }
         : headingLevel
           ? { kind: 'heading', headingLevel, text }
-          : line.spans[0]!.rect.left - medianLineLeft > medianLineHeight
-            ? { kind: 'blockquote', text }
-            : { kind: 'paragraph', text };
-    const previousLine = lines[index - 1];
-    const lineGap = previousLine ? line.top - previousLine.bottom : 0;
-    const previousBlock = blocks.at(-1);
-    if (
-      block.kind === 'paragraph' &&
-      previousBlock?.kind === 'paragraph' &&
-      lineGap <= medianLineHeight / 2
-    ) {
-      previousBlock.text = `${previousBlock.text} ${block.text}`;
-    } else {
-      blocks.push(block);
+          : null;
+    if (structuralBlock) {
+      flushProse();
+      blocks.push(structuralBlock);
+      continue;
     }
+
+    const previousLine = proseLines.at(-1);
+    const lineGap = previousLine ? line.top - previousLine.bottom : 0;
+    if (
+      previousLine &&
+      (lineGap > medianLineHeight || (isIndented(line) && !isIndented(previousLine)))
+    ) {
+      flushProse();
+    }
+    proseLines.push(line);
   }
+
+  flushProse();
 
   return blocks;
 }

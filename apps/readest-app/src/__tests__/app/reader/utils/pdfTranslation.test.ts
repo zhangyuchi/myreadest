@@ -143,6 +143,106 @@ describe('getVisiblePDFPageSources', () => {
     ]);
   });
 
+  it('reconstructs indented source paragraphs from visual lines', () => {
+    const renderer = document.createElement('div');
+    renderer.getBoundingClientRect = () => rect(0, 800);
+    const page = makePage(
+      0,
+      [
+        { text: 'The first paragraph wraps across', top: 150, bottom: 160 },
+        { text: 'three visual lines before it', top: 162, bottom: 172 },
+        { text: 'ends here.', top: 174, bottom: 184 },
+        { text: 'The second paragraph begins', top: 186, bottom: 196, left: 24 },
+        { text: 'at the body margin and ends here.', top: 198, bottom: 208 },
+        { text: 'The third paragraph begins', top: 210, bottom: 220, left: 24 },
+        { text: 'with two body-margin continuations', top: 222, bottom: 232 },
+        { text: 'before it ends here.', top: 234, bottom: 244 },
+      ],
+      0,
+      800,
+    );
+    const view = {
+      renderer: Object.assign(renderer, { getContents: () => [page] }),
+    } as unknown as FoliateView;
+
+    expect(getVisiblePDFPageSources(view)).toEqual([
+      {
+        index: 0,
+        blocks: [
+          {
+            kind: 'paragraph',
+            text: 'The first paragraph wraps across three visual lines before it ends here.',
+          },
+          {
+            kind: 'paragraph',
+            text: 'The second paragraph begins at the body margin and ends here.',
+          },
+          {
+            kind: 'paragraph',
+            text: 'The third paragraph begins with two body-margin continuations before it ends here.',
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('reconstructs consistently indented visual lines as one blockquote', () => {
+    const renderer = document.createElement('div');
+    renderer.getBoundingClientRect = () => rect(0, 800);
+    const page = makePage(
+      0,
+      [
+        { text: 'A body paragraph wraps', top: 150, bottom: 160 },
+        { text: 'across three visual lines', top: 162, bottom: 172 },
+        { text: 'before the quotation.', top: 174, bottom: 184 },
+        { text: 'The first quoted visual line', top: 210, bottom: 220, left: 90 },
+        { text: 'continues the same quotation.', top: 222, bottom: 232, left: 90 },
+      ],
+      0,
+      800,
+    );
+    const view = {
+      renderer: Object.assign(renderer, { getContents: () => [page] }),
+    } as unknown as FoliateView;
+
+    expect(getVisiblePDFPageSources(view)).toEqual([
+      {
+        index: 0,
+        blocks: [
+          {
+            kind: 'paragraph',
+            text: 'A body paragraph wraps across three visual lines before the quotation.',
+          },
+          {
+            kind: 'blockquote',
+            text: 'The first quoted visual line continues the same quotation.',
+          },
+        ],
+      },
+    ]);
+  });
+
+  it('removes a soft-wrap hyphen before a lowercase continuation', () => {
+    const renderer = document.createElement('div');
+    renderer.getBoundingClientRect = () => rect(0, 800);
+    const page = makePage(
+      0,
+      [
+        { text: 'They are talk-', top: 150, bottom: 160 },
+        { text: 'ing about sets.', top: 162, bottom: 172 },
+      ],
+      0,
+      800,
+    );
+    const view = {
+      renderer: Object.assign(renderer, { getContents: () => [page] }),
+    } as unknown as FoliateView;
+
+    const [source] = getVisiblePDFPageSources(view);
+    expect(source?.blocks).toEqual([{ kind: 'paragraph', text: 'They are talking about sets.' }]);
+    expect(source?.blocks[0]?.text).not.toContain('talk- ing');
+  });
+
   it('does not append translation nodes to the PDF document', () => {
     const renderer = document.createElement('div');
     renderer.getBoundingClientRect = () => rect(0, 800);
