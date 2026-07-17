@@ -260,6 +260,48 @@ describe('getVisiblePDFPageSources', () => {
     ]);
   });
 
+  it('separates a quote from a following first-line-indented paragraph', () => {
+    const renderer = document.createElement('div');
+    renderer.getBoundingClientRect = () => rect(0, 800);
+    const page = makePage(
+      0,
+      [
+        { text: 'The body paragraph has', top: 150, bottom: 160 },
+        { text: 'three visual lines before', top: 162, bottom: 172 },
+        { text: 'the quotation.', top: 174, bottom: 184 },
+        { text: 'The first quoted visual line', top: 186, bottom: 196, left: 90 },
+        { text: 'continues the quotation.', top: 198, bottom: 208, left: 90 },
+        { text: 'The next paragraph starts here', top: 210, bottom: 220, left: 24 },
+        { text: 'and continues at the body margin.', top: 222, bottom: 232 },
+      ],
+      0,
+      800,
+    );
+    const view = {
+      renderer: Object.assign(renderer, { getContents: () => [page] }),
+    } as unknown as FoliateView;
+
+    expect(getVisiblePDFPageSources(view)).toEqual([
+      {
+        index: 0,
+        blocks: [
+          {
+            kind: 'paragraph',
+            text: 'The body paragraph has three visual lines before the quotation.',
+          },
+          {
+            kind: 'blockquote',
+            text: 'The first quoted visual line continues the quotation.',
+          },
+          {
+            kind: 'paragraph',
+            text: 'The next paragraph starts here and continues at the body margin.',
+          },
+        ],
+      },
+    ]);
+  });
+
   it('uses the body margin when first-line and body-left lines are balanced', () => {
     const renderer = document.createElement('div');
     renderer.getBoundingClientRect = () => rect(0, 800);
@@ -287,6 +329,39 @@ describe('getVisiblePDFPageSources', () => {
           { kind: 'paragraph', text: 'The first paragraph begins and ends on its second line.' },
           { kind: 'paragraph', text: 'The second paragraph begins and ends on its second line.' },
           { kind: 'paragraph', text: 'The third paragraph begins and ends on its second line.' },
+        ],
+      },
+    ]);
+  });
+
+  it('ignores structural-line positions when finding the body margin', () => {
+    const renderer = document.createElement('div');
+    renderer.getBoundingClientRect = () => rect(0, 800);
+    const page = makePage(
+      0,
+      [
+        { text: 'Heading', top: 150, bottom: 170 },
+        { text: '• List item', top: 180, bottom: 190 },
+        { text: 'Shifted body text starts here', top: 200, bottom: 210, left: 24 },
+        { text: 'and continues on the next line.', top: 212, bottom: 222, left: 24 },
+      ],
+      0,
+      800,
+    );
+    const view = {
+      renderer: Object.assign(renderer, { getContents: () => [page] }),
+    } as unknown as FoliateView;
+
+    expect(getVisiblePDFPageSources(view)).toEqual([
+      {
+        index: 0,
+        blocks: [
+          { kind: 'heading', headingLevel: 1, text: 'Heading' },
+          { kind: 'unordered-list', text: 'List item' },
+          {
+            kind: 'paragraph',
+            text: 'Shifted body text starts here and continues on the next line.',
+          },
         ],
       },
     ]);

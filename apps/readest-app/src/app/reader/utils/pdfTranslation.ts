@@ -84,7 +84,33 @@ function getBodyBlocks(textLayer: Element): PDFSourceBlock[] {
   }
 
   const medianLineHeight = median(lines.map((line) => line.bottom - line.top)) ?? 0;
-  const bodyLeft = lowerMedian(lines.map((line) => line.spans[0]!.rect.left)) ?? 0;
+  const structuralBlockForLine = (line: TextLine): PDFSourceBlock | null => {
+    const text = textForLine(line);
+    const lineHeight = line.bottom - line.top;
+    const headingLevel =
+      lineHeight >= medianLineHeight * 2
+        ? 1
+        : lineHeight >= medianLineHeight * 1.6
+          ? 2
+          : lineHeight >= medianLineHeight * 1.3
+            ? 3
+            : null;
+    const unorderedList = text.match(/^[•◦▪*-]\s+/u);
+    const orderedList = text.match(/^\d+[.)]\s+/u);
+    return unorderedList
+      ? { kind: 'unordered-list', text: text.slice(unorderedList[0].length) }
+      : orderedList
+        ? { kind: 'ordered-list', text: text.slice(orderedList[0].length) }
+        : headingLevel
+          ? { kind: 'heading', headingLevel, text }
+          : null;
+  };
+  const bodyLeft =
+    lowerMedian(
+      lines
+        .filter((line) => structuralBlockForLine(line) === null)
+        .map((line) => line.spans[0]!.rect.left),
+    ) ?? 0;
   const blocks: PDFSourceBlock[] = [];
   const isIndented = (line: TextLine) => line.spans[0]!.rect.left - bodyLeft > medianLineHeight;
   let proseLines: TextLine[] = [];
@@ -101,25 +127,7 @@ function getBodyBlocks(textLayer: Element): PDFSourceBlock[] {
   };
 
   for (const line of lines) {
-    const text = textForLine(line);
-    const lineHeight = line.bottom - line.top;
-    const headingLevel =
-      lineHeight >= medianLineHeight * 2
-        ? 1
-        : lineHeight >= medianLineHeight * 1.6
-          ? 2
-          : lineHeight >= medianLineHeight * 1.3
-            ? 3
-            : null;
-    const unorderedList = text.match(/^[•◦▪*-]\s+/u);
-    const orderedList = text.match(/^\d+[.)]\s+/u);
-    const structuralBlock: PDFSourceBlock | null = unorderedList
-      ? { kind: 'unordered-list', text: text.slice(unorderedList[0].length) }
-      : orderedList
-        ? { kind: 'ordered-list', text: text.slice(orderedList[0].length) }
-        : headingLevel
-          ? { kind: 'heading', headingLevel, text }
-          : null;
+    const structuralBlock = structuralBlockForLine(line);
     if (structuralBlock) {
       flushProse();
       blocks.push(structuralBlock);
@@ -129,11 +137,16 @@ function getBodyBlocks(textLayer: Element): PDFSourceBlock[] {
     const previousLine = proseLines.at(-1);
     const lineGap = previousLine ? line.top - previousLine.bottom : 0;
     const quoteCandidate = proseLines.length > 1 && proseLines.every(isIndented);
+    const quoteLeft = quoteCandidate
+      ? (lowerMedian(proseLines.map((candidate) => candidate.spans[0]!.rect.left)) ?? null)
+      : null;
+    const outdentsQuote =
+      quoteLeft !== null && line.spans[0]!.rect.left < quoteLeft - medianLineHeight;
     if (
       previousLine &&
       (lineGap > medianLineHeight ||
         (isIndented(line) && !isIndented(previousLine)) ||
-        (!isIndented(line) && quoteCandidate))
+        outdentsQuote)
     ) {
       flushProse();
     }
